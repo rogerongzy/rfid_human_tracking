@@ -36,3 +36,12 @@ The ros node of rfid predicting AOA:
 ```Cmd
 python3 demo.py 
 ```
+
+
+If proceed with Legion 5 (Computer 2), some more steps are needed before main_run:
+```Cmd
+sudo chmod 777 /dev/ttyUSB*
+source catkin_ws/devel_isolated/setup.bash
+roslaunch cartographer_ros demo_backpack_2d_localization.launch
+```
+
