@@ -39,8 +39,12 @@ rosrun rfid rfid 169.254.1.1
 
 The ros node of rfid predicting AOA:
 ```Cmd
-
 python3 rfid_AOA.py
+```
+
+The ros node of feetech motor (neck initialization):
+```Cmd
+roslaunch feetech_controls feetech_topic.launch
 ```
 
 If proceed with Legion 5 (Computer 2), some more steps are needed before main_run:
