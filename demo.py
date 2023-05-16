@@ -13,7 +13,8 @@ TAG_ID = 'E280-1160-6000-0209-F811-48C3'
 PHASE_LOAD_NUM = 4
 #####################################################
 phase_vector = []
-# phase_vector_past = []
+layer = []
+phase_vector_unwrapped = []
 
 
 
@@ -32,17 +33,23 @@ def rfid_callback(data):
     # assumed the signals are good enough, directly put into phase_vector
     # need unwrap before put into phase_loader
     if data.epc == TAG_ID and data.ant == 1:
+
         if len(phase_vector) < PHASE_LOAD_NUM:
             phase_vector.append(data.phase / 180 * np.pi)
         elif len(phase_vector) == PHASE_LOAD_NUM:
             # update the value of phase_vector
-            phase_vector[0] = phase_vector[1]
-            phase_vector[1] = phase_vector[2]
-            phase_vector[2] = phase_vector[3]
-            phase_vector[3] = data.phase / 180 * np.pi
+            # phase_vector[0] = phase_vector[1]
+            # phase_vector[1] = phase_vector[2]
+            # phase_vector[2] = phase_vector[3]
+            # phase_vector[3] = data.phase / 180 * np.pi
+            phase_vector = phase_vector[1:len(phase_vector)]
+            phase_vector.append(data.phase / 180 * np.pi)
 
-            # unwrap
+            # unwrap(real-time version)
             
+
+
+
             process()
 
 
@@ -129,7 +136,6 @@ def read_csv():
 
 
     
-unwrap_threshold = 1
 
 
 
