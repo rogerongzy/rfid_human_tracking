@@ -1,0 +1,11 @@
+prefix=/mnt/work/output/bamboo/host
+exec_prefix=/mnt/work/output/bamboo/host
+libdir=/mnt/work/output/bamboo/host/lib
+includedir=/mnt/work/output/bamboo/host/include
+
+Name: uuid
+Description: Universally unique id library
+Version: 2.35.1
+Requires:
+Cflags: -I${includedir}/uuid
+Libs: -L${libdir} -luuid

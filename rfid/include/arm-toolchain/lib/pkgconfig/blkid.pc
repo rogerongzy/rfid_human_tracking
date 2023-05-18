@@ -1,0 +1,10 @@
+prefix=/mnt/work/output/bamboo/host
+exec_prefix=/mnt/work/output/bamboo/host
+libdir=/mnt/work/output/bamboo/host/lib
+includedir=/mnt/work/output/bamboo/host/include
+
+Name: blkid
+Description: Block device id library
+Version: 2.35.1
+Cflags: -I${includedir}/blkid
+Libs: -L${libdir} -lblkid
