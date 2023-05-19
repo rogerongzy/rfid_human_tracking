@@ -1,6 +1,5 @@
-import numpy as np
-
 import rospy
+import numpy as np
 from cmath import exp
 from rfid.msg import rfid_msg
 
