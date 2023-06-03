@@ -54,7 +54,7 @@ class RFID_Subscriber:
         self.phasor_old = np.array([None] * NUM_ANTENNA)
         self.phasor_current = np.array([None] * NUM_ANTENNA)
         ### 
-        self.location_current = self.tag_camera_position # ???
+        # self.location_current = self.tag_camera_position # refer to the camera frame ##### 1
         ### ROS
         self.subscriber = rospy.Subscriber('/rfid_message', rfid_msg, self.callback_2) # choose callback
 
@@ -88,11 +88,12 @@ class RFID_Subscriber:
                 pose, _, _ = self.tag_detector.detection_pose(tags, camera_params=(F_X, F_Y, C_X, C_Y), tag_size=TAG_SIZE)
                 self.tag_camera_position = pose[:3, 3]
                 # rotation = pose[:3, :3]
+                self.location_current = self.tag_camera_position ##### 2
 
 
-    def tag_antenna_position(self, antenna_id):
+    def tag_antenna_position(self, tag_camera_position, antenna_id):
         # position = self.tag_camera_position # if written like this, tag_camera_position will be replaced by the calculated position
-        position = np.array((self.tag_camera_position[0], self.tag_camera_position[1], self.tag_camera_position[2]))
+        position = np.array((tag_camera_position[0], tag_camera_position[1], tag_camera_position[2]))
         position[0] = position[0] + (2 * antenna_id - 5) * HALF_SIDE - X_OFFSET # 1:-3 2:-1 3:+1 4:+3 
         position[1] = position[1] - Y_OFFSET - HALF_SIDE
         position[2] = position[2] + Z_OFFSET
@@ -140,15 +141,15 @@ class RFID_Subscriber:
                 
             print('-------------------------------')
             print(self.phasor_unwrapped)
-            # print(self.phasor_normalized())
+            # print(self.phasor_normalized(self.phasor_unwrapped))
 
             self.tag_detect()
 
             print(self.tag_camera_position)
-            print(self.tag_antenna_position(msg.ant))
-            print(np.linalg.norm(self.tag_antenna_position(msg.ant)))
+            print(self.tag_antenna_position(self.tag_camera_position, msg.ant))
+            print(np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, msg.ant)))
 
-            # file3.write(str(np.linalg.norm(self.tag_antenna_position(msg.ant))) + "\n") # true euclidean distance
+            # file3.write(str(np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, msg.ant))) + "\n") # true euclidean distance
             # file3.write(str(self.tag_camera_position[2]) + "\n") # distance along z axis
 
 
@@ -167,7 +168,7 @@ class RFID_Subscriber:
                 
                 # modified
                 # initial calibration
-                self.phasor_unwrapped[msg.ant - 1] = np.linalg.norm(self.tag_antenna_position(msg.ant)) * 4 * np.pi / WAVE_LENGTH
+                self.phasor_unwrapped[msg.ant - 1] = np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, msg.ant)) * 4 * np.pi / WAVE_LENGTH
 
                 # self.phasor_unwrapped[msg.ant - 1] = -msg.phase / 180 * np.pi
                 self.phasor_old[msg.ant - 1] = msg.phase / 180 * np.pi
@@ -175,7 +176,7 @@ class RFID_Subscriber:
 
 
                 # modified_unwrapped_phase.append(-float(line2) + float(data2[0]) + float(data3[0]) * 4 * np.pi / lmd)
-                # np.linalg.norm(self.tag_antenna_position(msg.ant))
+                # np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, msg.ant))
 
             else:
                 # original
@@ -207,21 +208,23 @@ class RFID_Subscriber:
                     self.tag_detect() # messages for 4 antennas can be seen simultaneous, where detection only need to be done once
                     
                     print('-------------------------------')
-                    # print(self.phasor_unwrapped)
-                    # print(self.phasor_normalized())
-                    # print(np.linalg.norm(self.phasor_normalized()))
-                    # print(self.phasor_normalized().getH())
-                    # print(np.linalg.norm(self.phasor_normalized().getH()))
+                    print(self.phasor_unwrapped)
 
-                    # print(self.cosine_similarity(self.phasor_normalized(), self.phasor_normalized()))
-                    # print(self.candidates_generator())
+                    # print(self.phasor_normalized(self.phasor_unwrapped))
+                    # print(np.linalg.norm(self.phasor_normalized(self.phasor_unwrapped)))
+                    # print(self.phasor_normalized(self.phasor_unwrapped).getH())
+                    # print(np.linalg.norm(self.phasor_normalized(self.phasor_unwrapped).getH()))
+                    # print(self.cosine_similarity(self.phasor_normalized(self.phasor_unwrapped), self.phasor_normalized(self.phasor_unwrapped)))
 
 
-                    print(self.tag_camera_position)
-                    # print(np.linalg.norm(self.tag_antenna_position(msg.ant)))
+                    # print(self.location_current)
+                    # print(self.tag_camera_position)
+                    # print(self.tag_antenna_position(self.tag_camera_position, msg.ant))
+                    print(self.candidates_generator())
+
 
                     # file2.write(str(self.phasor_unwrapped[msg.ant - 1]) + "\n")
-                    # file3.write(str(np.linalg.norm(self.tag_antenna_position(msg.ant)) * 4 * np.pi / WAVE_LENGTH) + "\n")
+                    # file3.write(str(np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, msg.ant)) * 4 * np.pi / WAVE_LENGTH) + "\n")
             
 
 
@@ -231,60 +234,57 @@ class RFID_Subscriber:
 
 
 
-    def phasor_normalized(self):
+    def phasor_normalized(self, phasor):
         phasor_temp = []
-        for i in range(len(self.phasor_unwrapped)):
-            phasor_temp.append(exp(-1j*(self.phasor_unwrapped[i] - self.phasor_unwrapped[0])))
+        for i in range(len(phasor)):
+            phasor_temp.append(exp(-1j*(phasor[i] - phasor[0])))
         phasor_normalized = np.matrix(phasor_temp)
-        # phasor_normalized = np.matrix([1, exp(-1j*(self.phasor_unwrapped[1] - self.phasor_unwrapped[0])), exp(-1j*(self.phasor_unwrapped[2] - self.phasor_unwrapped[0])), exp(-1j*(self.phasor_unwrapped[3] - self.phasor_unwrapped[0]))])
         return phasor_normalized
 
 
     def cosine_similarity(self, complex_vec_1, complex_vec_2):
-        num = np.dot(complex_vec_1, complex_vec_2.getH())
+        num = np.linalg.norm(np.dot(complex_vec_1, complex_vec_2.getH()))
+        # num = np.dot(complex_vec_1, complex_vec_2.getH())
         # print(num)
         den = np.linalg.norm(complex_vec_1) * np.linalg.norm(complex_vec_2)
         # print(den)
         return num / den
 
 
-
     def candidates_generator(self):
-        # RADIUS = 0.2
-        candidates_list = []
+        # only in 2D top-view plane
+        candidates = []
         for i in range(NUM_CIRCULAR_SPLIT):
-            temp_loc = np.array((self.location_current[0] + RADIUS * np.cos(i * 2 * np.pi / NUM_CIRCULAR_SPLIT), self.location_current[1], self.location_current[2] + RADIUS * np.sin(i * 2 * np.pi / NUM_CIRCULAR_SPLIT)))
-
-            candidates_list.append(temp_loc)
-        
-        return candidates_list
-
-        
+            # generate a circle
+            temp_coordinate = np.array((self.location_current[0] + RADIUS * np.cos(i * 2 * np.pi / NUM_CIRCULAR_SPLIT), self.location_current[1], self.location_current[2] + RADIUS * np.sin(i * 2 * np.pi / NUM_CIRCULAR_SPLIT)))
+            # generate a ellipse instead
 
 
 
+            temp_phasor = np.array([np.linalg.norm(self.tag_antenna_position(temp_coordinate, 1)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(temp_coordinate, 2)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(temp_coordinate, 3)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(temp_coordinate, 4)) * 4 * np.pi / WAVE_LENGTH])
+            
+            temp_similarity = self.cosine_similarity(self.phasor_normalized(self.phasor_unwrapped), self.phasor_normalized(temp_phasor))
+
+            candidates.append(temp_phasor)
+
+        # need to include itself?
+        temp_coordinate = np.array((self.location_current[0], self.location_current[1], self.location_current[2]))
+        temp_phasor = np.array([np.linalg.norm(self.tag_antenna_position(temp_coordinate, 1)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(temp_coordinate, 2)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(temp_coordinate, 3)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(temp_coordinate, 4)) * 4 * np.pi / WAVE_LENGTH])
+        temp_similarity = self.cosine_similarity(self.phasor_normalized(self.phasor_unwrapped), self.phasor_normalized(temp_phasor))
+        candidates.append(temp_phasor)
+
+        return candidates
 
 
+    ########################
+    # seems to be sensative along lateral (z) direction, maybe use ellipse instead?
 
-# def process():
-#     # normal
-#     # phasor_normalized = [1, exp(-1j*(phasor[1] - phasor[0])), exp(-1j*(phasor[2] - phasor[0])), exp(-1j*(phasor[3] - phasor[0]))]
-#     # print(phasor_normalized) # can not show the complex using print(float)
+    # when updating, not appriximate directly, do synthesis
 
-#     # numpy.ndarray, shape(4,)
-#     # phasor_normalized = np.array([1, exp(-1j*(phasor[1] - phasor[0])), exp(-1j*(phasor[2] - phasor[0])), exp(-1j*(phasor[3] - phasor[0]))])
-#     # print(phasor_normalized)
-#     # print(phasor_normalized.getH())
+    def location_update(self):
+        self.location_current = self.location_current
 
-#     # numpy.matrix, shape(1,4)
-#     phasor_normalized = np.matrix([1, exp(-1j*(phasor_unwrapped[1] - phasor_unwrapped[0])), exp(-1j*(phasor_unwrapped[2] - phasor_unwrapped[0])), exp(-1j*(phasor_unwrapped[3] - phasor_unwrapped[0]))])
-#     # print(phasor_normalized)
-#     # print(phasor_normalized.getH())
 
-#     # complex matrix multiplication
-#     # print(np.dot(phasor_normalized, phasor_normalized.getH()))
-
-#     # 2-norm
 
 
 
