@@ -8,7 +8,7 @@ import re
 import rospy
 from rfid.msg import rfid_msg
 from dataloader_robot import *
-from std_msgs.msg     import Float64
+from std_msgs.msg import Float64
 import actionlib
 import cv2
 from sensor_msgs.msg import Image
@@ -129,7 +129,7 @@ def match(a,b):
     a_norm = np.linalg.norm(a)
     b_norm = np.linalg.norm(b)
     C = abs(np.dot(trans_array,b))/(a_norm*b_norm)
-    return Cpipe.start(config)
+    return C
 
 def complex_sequence(vec,Nr):
     e = []
