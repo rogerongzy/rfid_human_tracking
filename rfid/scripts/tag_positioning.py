@@ -459,8 +459,8 @@ if __name__ == '__main__':
             # rospy.Subscriber("/rfid_message", rfid_msg, lambda msg: rfid_callback(msg, phasor_unwrapped))
 
             rfid_subscriber = RFID_Subscriber()
-            rate.sleep() # what usage?
-            rospy.spin() # what usage?
+            rate.sleep()
+            rospy.spin()
 
         # option 2
         # rfid_subscriber = RFID_Subscriber()
