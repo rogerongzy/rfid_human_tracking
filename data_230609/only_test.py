@@ -275,4 +275,8 @@ It seems better. However, the further distance will still influence the accuracy
 It can alleviate the strip-skipping effect to some degree, but still exist.
 The parameter 'radius' should be big enough to cover the biggest speed of possible tag movement.
 Use the best 2 of them and synthesis have a quite good performance. 
+Searching space should be circle but not square.
+Todo:
+Number of candidates/particles.
+Heuristic radius.
 """
