@@ -15,7 +15,7 @@ pt_1 = np.array((25, 80)) # original pos
 
 ### figure initialization ###
 colors = ['crimson', 'magenta', 'darkslateblue', 'violet', 'blue', 'steelblue', 'cyan', 'turquoise', 'lime', 'green', 'yellowgreen', 'yellow', 'gold', 'goldenrod', 'orangered', 'darkred', 'gray']
-plt.figure(figsize=(8,8))
+
 
 
 def generate_random_pt(centre, radius):
@@ -41,8 +41,8 @@ def cosine_similarity(complex_vec_1, complex_vec_2):
 def plot_candidates(pt_current, raduis, num_circular_split):
     for i in range(num_circular_split):
         pt_temp = np.array((pt_current[0] + raduis * np.cos(i * 2 * np.pi / num_circular_split), pt_current[1] + raduis * np.sin(i * 2 * np.pi / num_circular_split)))
-        plt.scatter(pt_temp[0], pt_temp[1], c=colors[i], s=300)
-    plt.scatter(pt_current[0], pt_current[1], c=colors[16], s=300)
+        plt.scatter(pt_temp[0], pt_temp[1], c=colors[i], s=200)
+    plt.scatter(pt_current[0], pt_current[1], c=colors[16], s=200)
 
 def candidate_generator(pt_current, pt_measured, raduis, num_circular_split):
     candidates = []
@@ -50,7 +50,11 @@ def candidate_generator(pt_current, pt_measured, raduis, num_circular_split):
     phasor_measured = get_phasor(pt_measured)
 
     for i in range(num_circular_split):
-        pt_temp = np.array((pt_current[0] + raduis * np.cos(i * 2 * np.pi / num_circular_split), pt_current[1] + raduis * np.sin(i * 2 * np.pi / num_circular_split)))
+        # pt_temp = np.array((pt_current[0] + raduis * np.cos(i * 2 * np.pi / num_circular_split), pt_current[1] + raduis * np.sin(i * 2 * np.pi / num_circular_split))) # circulate
+
+        # pt_temp = np.array((pt_current[0] + random.uniform(-raduis, raduis), pt_current[1] + random.uniform(-raduis, raduis))) # random
+        pt_temp = generate_random_pt(pt_current, raduis) # random
+
         phasor_temp = get_phasor(pt_temp)
         sim_temp = cosine_similarity(phasor_normalized(phasor_measured), phasor_normalized(phasor_temp))
         
@@ -64,12 +68,12 @@ def candidate_generator(pt_current, pt_measured, raduis, num_circular_split):
 
     candidates.append(pt_temp)
     result.append(sim_temp)
-
+    # print(result)
 
     # 1, only returning the candidate with the biggest similarity
     idx = result.index(max(result))
-    plt.scatter(pt_measured[0], pt_measured[1], c=colors[idx], s=5)
-    # return candidates[idx]
+    # plt.scatter(pt_measured[0], pt_measured[1], c=colors[idx], s=5)
+    return candidates[idx]
 
 
     # [not working well] 2, weighted sum of all 
@@ -98,60 +102,153 @@ def candidate_generator(pt_current, pt_measured, raduis, num_circular_split):
     # return pt_new
     
     
-    # 4, weighted sum of outstanding 3 some of them (preset number)
+    # 4, weighted sum of outstanding 2 some of them (preset number)
     # new_result = []
     # new_candidates = []
-    # for _ in range(3):
+    # new_idx = []
+    # for _ in range(2):
     #     max_result = max(result)
     #     idx = result.index(max_result)
     #     new_result.append(result[idx])
     #     new_candidates.append(candidates[idx])
     #     result[idx] = 0
+    #     new_idx.append(idx)
+    
+    # # for temp_idx in new_idx:
+    # #     plt.scatter(candidates[temp_idx][0], candidates[temp_idx][1], c=colors[temp_idx], s=400)
 
     # result_normalize = [x / sum(new_result) for x in new_result]
     # pt_new = np.array((0, 0))
     # for i in range(len(result_normalize)):
     #     # print(candidates[i] * result_normalize[i])
     #     pt_new = pt_new + new_candidates[i] * result_normalize[i]
-
+    # # plt.scatter(pt_new[0], pt_new[1], c='red', s=20, label='synthesis')
     # return pt_new
 
 
     # 5, weighted sum of all, add some preset/heuristic factors on weights
 
 
-
-
-
-
-
-if __name__ == '__main__':
+def plot_hotspot():
+    plt.figure(figsize=(8,8))
     plot_candidates(pt_1, 5, 16)
+
     for _ in range(5000):
         new_pt = generate_random_pt(pt_1, 5)
         # print(new_pt)
         candidate_generator(pt_1, new_pt, 5, 16)
 
-    # plt.show()
-    plt.savefig('25-80.png')
+    plt.show()
+    # plt.savefig('25-80.png')
 
 
-    # mylist = [1,3,5,2,6,4]
-    # idx_list = []
-    # for _ in range(2):
-    #     maxnum = max(mylist)
-    #     idx = mylist.index(maxnum)
-    #     mylist[idx] = 0
-    #     idx_list.append(idx)
 
-    # print(idx_list)
-    # print(mylist[2])
- 
+###### phasor differenciate ######
+
+def candidate_generator_df(pt_current, pt_measured, raduis, num_circular_split):
+    candidates = []
+    result = []
+    phasor_current = get_phasor(pt_current)
+    phasor_measured = get_phasor(pt_measured)
+
+    for i in range(num_circular_split):
+        pt_temp = np.array((pt_current[0] + raduis * np.cos(i * 2 * np.pi / num_circular_split), pt_current[1] + raduis * np.sin(i * 2 * np.pi / num_circular_split)))
+        phasor_temp = get_phasor(pt_temp)
+        
+        # sim_temp = cosine_similarity(phasor_normalized(phasor_measured), phasor_normalized(phasor_temp)) # direct distance/phase
+        sim_temp = cosine_similarity(phasor_normalized(phasor_measured - phasor_current), phasor_normalized(phasor_temp - phasor_current)) # differenciate
+        
+        # print('-------------------------------')
+        # print(phasor_current)
+
+        candidates.append(pt_temp)
+        result.append(sim_temp)
+    
+    # add itself as a candidate, other than the circle, totally 9 candidates
+    pt_temp = pt_current
+    phasor_temp = get_phasor(pt_temp)
+    sim_temp = cosine_similarity(phasor_normalized(phasor_measured - phasor_current), phasor_normalized(phasor_temp - phasor_current))
+
+    candidates.append(pt_temp)
+    result.append(sim_temp)
+
+    idx = result.index(max(result))
+    # plt.scatter(pt_measured[0], pt_measured[1], c=colors[idx], s=5)
+    return candidates[idx]
 
     
+def plot_hotspot_df():
+    plt.figure(figsize=(8,8))
+    plot_candidates(pt_1, 5, 16)
+
+    for _ in range(5000):
+        new_pt = generate_random_pt(pt_1, 5)
+        # print(new_pt)
+        candidate_generator_df(pt_1, new_pt, 5, 16)
     
+    plt.show()
 
 
+
+###### complete simulation ######
+def func(x):
+    return x**2
+
+
+def generate_trajectory():
+    # generate a trajectory and sample at certain time-stamp
+    # from (0, 40) to (40, 80)
+    y = np.linspace(0, 40, 50) # len = 50, range = (0, 40)
+    x = func(y) / 40
+    return x, y + 40
+
+
+def simulation_process():
+    X, Y = generate_trajectory()
+    plt.figure(figsize=(12,12))
+    plt.plot(X, Y)
+    plt.scatter(X, Y, c='red', s=5)
+    current_pt = np.array((0, 40))
+
+    x_set = [X[0]]
+    y_set = [Y[0]]
+
+    for i in range(len(X)-1):
+        measure_pt = np.array((X[i+1], Y[i+1]))
+        
+        temp_pt = candidate_generator(current_pt, measure_pt, 2, 100)
+
+        current_pt = temp_pt
+
+        x_set.append(temp_pt[0])
+        y_set.append(temp_pt[1])
+        # plt.scatter(temp_pt[0], temp_pt[1], c='blue', s=5)
+
+    plt.plot(x_set, y_set, c='blue')
+    
+    plt.show()
+
+
+def synthesis_scope():
+    plt.figure(figsize=(8,8))
+    temp_pt = generate_random_pt(pt_1, 5)
+    plt.scatter(temp_pt[0], temp_pt[1], c='blue', s=20, label='current ground truth')
+
+    
+    # candidate_generator(pt_1, temp_pt, 5, 16)
+    # plt.legend()
+
+
+
+if __name__ == '__main__':
+    # plot_hotspot()
+
+    # plot_hotspot_df()
+
+    simulation_process()
+
+
+    
 
  
     
@@ -169,4 +266,13 @@ candidates 1 2 8 have big values, but actually closer to candidate 1, candidate 
 ---------why 3: 2 for mutual compensation, 1 for bias, seems to be the best
 ------synthesis with bonus 
 Draw a hotspot graph, proofing the possibility is not equal to all candidates
+
+Draw all the candidate, draw the complete curve plot on the complete simulation, inspect whether the strip-skipping effect will happen.
+
+230612:
+The 'Monte Carlo' version:
+It seems better. However, the further distance will still influence the accuracy of the matching.
+It can alleviate the strip-skipping effect to some degree, but still exist.
+The parameter 'radius' should be big enough to cover the biggest speed of possible tag movement.
+Use the best 2 of them and synthesis have a quite good performance. 
 """
