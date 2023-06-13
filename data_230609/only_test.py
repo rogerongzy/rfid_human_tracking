@@ -287,8 +287,8 @@ def simulation_process():
 
         # r should be heuristic, estimate velocity, 2 * df_size
 
-        temp_pt = candidate_generator(current_pt, measure_pt, 2 * df_size, 100) # 100 particles, searching area is 0.05m circle in distance
-        # temp_pt = candidate_generator(previewed_pt, measure_pt, 2 * df_size, 100) # 100 particles, searching area is 0.05m circle in distance
+        # temp_pt = candidate_generator(current_pt, measure_pt, 2 * df_size, 100) # 100 particles, searching area is 0.05m circle in distance
+        temp_pt = candidate_generator(previewed_pt, measure_pt, 2 * df_size, 100) # 100 particles, searching area is 0.05m circle in distance
 
 
 
@@ -310,7 +310,7 @@ def simulation_process():
     plt.plot(candidate_traj_x, candidate_traj_y, c='blue')
     
     # plt.show()
-    plt.savefig('sin1_no-preview.jpg')
+    plt.savefig('sin1_no-preview.png')
 
 
 

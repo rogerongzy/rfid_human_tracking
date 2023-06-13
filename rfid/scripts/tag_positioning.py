@@ -1,5 +1,6 @@
 import cv2
 import rospy
+import random
 import apriltag
 import numpy as np
 import pyrealsense2 as rs
@@ -18,7 +19,8 @@ PHASE_LOAD_NUM = 4
 TAG_SIZE = 0.16
 # antenna params
 NUM_ANTENNA = 4
-WAVE_LENGTH = 0.232924707 # 0.162924707 * 2 provided
+WAVE_LENGTH = 0.232924707 # tuned
+# WAVE_LENGTH = 0.162924707 * 2 # provided
 # camera params
 F_X, F_Y = 649.376, 649.376 # focal_length
 C_X, C_Y = 648.137, 353.517 # principal_point
@@ -28,12 +30,27 @@ Y_OFFSET = 0.085
 Z_OFFSET = 0.06
 HALF_SIDE = 0.125
 # candidates params
-RADIUS = 0.2 # metre
-NUM_CIRCULAR_SPLIT = 8
-###############################################################
-# file1 = open("phase_wrap.txt", "a+")
-# file2 = open("phase_unwrap.txt", "a+")
-# file3 = open("dist_camera.txt", "a+")
+RADIUS = 0.02 # metre
+NUM_CANDIDATES = 50
+####################### saving data ###########################
+# file1 = open("phase_unwrap_1.txt", "a+")
+# file2 = open("phase_unwrap_2.txt", "a+")
+# file3 = open("phase_unwrap_3.txt", "a+")
+# file4 = open("phase_unwrap_4.txt", "a+")
+# file5 = open("dist_camera_1.txt", "a+")
+# file6 = open("dist_camera_2.txt", "a+")
+# file7 = open("dist_camera_3.txt", "a+")
+# file8 = open("dist_camera_4.txt", "a+")
+
+traj_gt_file = open('traj_gt.csv', 'a+')
+traj_gt_writer = csv.writer(traj_gt_file)
+traj_pd_file = open('traj_pd.csv', 'a+')
+traj_pd_writer = csv.writer(traj_pd_file)
+
+
+
+
+
 
 
 ###############################################################
@@ -67,6 +84,8 @@ class RFID_Subscriber:
         self.pipeline.start(self.config)
         self.tag_detector = apriltag.Detector(apriltag.DetectorOptions(families='tag36h11'))
         self.tag_detect() # initialize tag_camera_position
+        self.location_current = np.array([self.tag_camera_position[0], self.tag_camera_position[1], self.tag_camera_position[2]])
+        
 
 
     def tag_detect(self):
@@ -88,12 +107,11 @@ class RFID_Subscriber:
                 pose, _, _ = self.tag_detector.detection_pose(tags, camera_params=(F_X, F_Y, C_X, C_Y), tag_size=TAG_SIZE)
                 self.tag_camera_position = pose[:3, 3]
                 # rotation = pose[:3, :3]
-                self.location_current = self.tag_camera_position ##### 2
 
 
     def tag_antenna_position(self, tag_camera_position, antenna_id):
         # position = self.tag_camera_position # if written like this, tag_camera_position will be replaced by the calculated position
-        position = np.array((tag_camera_position[0], tag_camera_position[1], tag_camera_position[2]))
+        position = np.array([tag_camera_position[0], tag_camera_position[1], tag_camera_position[2]])
         position[0] = position[0] + (2 * antenna_id - 5) * HALF_SIDE - X_OFFSET # 1:-3 2:-1 3:+1 4:+3 
         position[1] = position[1] - Y_OFFSET - HALF_SIDE
         position[2] = position[2] + Z_OFFSET
@@ -160,20 +178,17 @@ class RFID_Subscriber:
         if msg.epc == TAG_ID:
 
             if self.phasor_unwrapped[msg.ant - 1] == None:
-                
-
+            
                 # original
                 # self.phasor_unwrapped[msg.ant - 1] = msg.phase / 180 * np.pi
                 # self.phasor_old[msg.ant - 1] = msg.phase / 180 * np.pi
                 
-                # modified
-                # initial calibration
+                # modified by introducing initial calibration
                 self.phasor_unwrapped[msg.ant - 1] = np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, msg.ant)) * 4 * np.pi / WAVE_LENGTH
 
                 # self.phasor_unwrapped[msg.ant - 1] = -msg.phase / 180 * np.pi
                 self.phasor_old[msg.ant - 1] = msg.phase / 180 * np.pi
                 
-
 
                 # modified_unwrapped_phase.append(-float(line2) + float(data2[0]) + float(data3[0]) * 4 * np.pi / lmd)
                 # np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, msg.ant))
@@ -191,7 +206,8 @@ class RFID_Subscriber:
             
                 # self.phasor_old[msg.ant - 1] = self.phasor_current[msg.ant - 1]
                 
-                # modified
+
+                # modified by real-time initial calibration
                 self.phasor_current[msg.ant - 1] = msg.phase / 180 * np.pi
 
                 if self.phasor_current[msg.ant - 1] - self.phasor_old[msg.ant - 1] > np.pi:
@@ -203,12 +219,29 @@ class RFID_Subscriber:
             
                 self.phasor_old[msg.ant - 1] = self.phasor_current[msg.ant - 1]
 
+                
+                ## segmentation used to record data from 4 antenna ###
+                # if msg.ant == 1:
+                #     file1.write(str(self.phasor_unwrapped[msg.ant - 1]) + "\n")
+                #     file5.write(str(np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, msg.ant)) * 4 * np.pi / WAVE_LENGTH) + "\n")
+                # elif msg.ant == 2:
+                #     file2.write(str(self.phasor_unwrapped[msg.ant - 1]) + "\n")
+                #     file6.write(str(np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, msg.ant)) * 4 * np.pi / WAVE_LENGTH) + "\n")
+                # elif msg.ant == 3:
+                #     file3.write(str(self.phasor_unwrapped[msg.ant - 1]) + "\n")
+                #     file7.write(str(np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, msg.ant)) * 4 * np.pi / WAVE_LENGTH) + "\n")
+                # elif msg.ant == 4:
+                #     file4.write(str(self.phasor_unwrapped[msg.ant - 1]) + "\n")
+                #     file8.write(str(np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, msg.ant)) * 4 * np.pi / WAVE_LENGTH) + "\n")
+                    
+                #     self.tag_detect()
+                #     traj_gt_writer.writerow([self.tag_camera_position[0], self.tag_camera_position[1], self.tag_camera_position[2]])
 
                 if msg.ant == 4:
                     self.tag_detect() # messages for 4 antennas can be seen simultaneous, where detection only need to be done once
                     
-                    print('-------------------------------')
-                    print(self.phasor_unwrapped)
+                    # print('-------------------------------')
+                    # print(self.phasor_unwrapped)
 
                     # print(self.phasor_normalized(self.phasor_unwrapped))
                     # print(np.linalg.norm(self.phasor_normalized(self.phasor_unwrapped)))
@@ -220,12 +253,15 @@ class RFID_Subscriber:
                     # print(self.location_current)
                     # print(self.tag_camera_position)
                     # print(self.tag_antenna_position(self.tag_camera_position, msg.ant))
-                    print(self.candidates_generator())
 
+                    
 
-                    # file2.write(str(self.phasor_unwrapped[msg.ant - 1]) + "\n")
-                    # file3.write(str(np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, msg.ant)) * 4 * np.pi / WAVE_LENGTH) + "\n")
-            
+                    # updating the current cordinate with the most possible candidate
+                    predicted_coordinate = self.candidates_generator()
+                    self.location_current = predicted_coordinate
+
+                    traj_gt_writer.writerow([self.tag_camera_position[0], self.tag_camera_position[1], self.tag_camera_position[2]])
+                    traj_pd_writer.writerow([predicted_coordinate[0], predicted_coordinate[1], predicted_coordinate[2]])
 
 
 
@@ -234,16 +270,23 @@ class RFID_Subscriber:
 
 
 
+    def generate_random_coordinate(self, centre, radius):
+        random_radius = random.uniform(0, radius)
+        random_angle = random.uniform(0, 2 * np.pi)
+        new_coordinate = np.array([centre[0] +  random_radius * np.cos(random_angle), centre[1], centre[2] + random_radius * np.sin(random_angle)])
+        return new_coordinate
+
     def phasor_normalized(self, phasor):
         phasor_temp = []
         for i in range(len(phasor)):
             phasor_temp.append(exp(-1j*(phasor[i] - phasor[0])))
-        phasor_normalized = np.matrix(phasor_temp)
+        # phasor_normalized = np.matrix(phasor_temp)
+        phasor_normalized = np.array(phasor_temp)
         return phasor_normalized
 
-
     def cosine_similarity(self, complex_vec_1, complex_vec_2):
-        num = np.linalg.norm(np.dot(complex_vec_1, complex_vec_2.getH()))
+        # num = np.linalg.norm(np.dot(complex_vec_1, complex_vec_2.getH()))
+        num = np.linalg.norm(np.dot(complex_vec_1, complex_vec_2.conjugate().T))
         # num = np.dot(complex_vec_1, complex_vec_2.getH())
         # print(num)
         den = np.linalg.norm(complex_vec_1) * np.linalg.norm(complex_vec_2)
@@ -253,41 +296,35 @@ class RFID_Subscriber:
 
     def candidates_generator(self):
         # only in 2D top-view plane
-        candidates = []
-        for i in range(NUM_CIRCULAR_SPLIT):
-            # generate a circle
-            temp_coordinate = np.array((self.location_current[0] + RADIUS * np.cos(i * 2 * np.pi / NUM_CIRCULAR_SPLIT), self.location_current[1], self.location_current[2] + RADIUS * np.sin(i * 2 * np.pi / NUM_CIRCULAR_SPLIT)))
-            # generate a ellipse instead
+        candidates_list = []
+        result_list = []
+        for i in range(NUM_CANDIDATES):
 
-
+            # temp_coordinate = np.array([self.location_current[0] + RADIUS * np.cos(i * 2 * np.pi / NUM_CANDIDATES), self.location_current[1], self.location_current[2] + RADIUS * np.sin(i * 2 * np.pi / NUM_CANDIDATES)])
+            temp_coordinate = self.generate_random_coordinate(self.location_current, RADIUS) # invariant radius, modified into heuristic
 
             temp_phasor = np.array([np.linalg.norm(self.tag_antenna_position(temp_coordinate, 1)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(temp_coordinate, 2)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(temp_coordinate, 3)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(temp_coordinate, 4)) * 4 * np.pi / WAVE_LENGTH])
-            
             temp_similarity = self.cosine_similarity(self.phasor_normalized(self.phasor_unwrapped), self.phasor_normalized(temp_phasor))
 
-            candidates.append(temp_phasor)
+            candidates_list.append(temp_coordinate)
+            result_list.append(temp_similarity)
 
-        # need to include itself?
-        temp_coordinate = np.array((self.location_current[0], self.location_current[1], self.location_current[2]))
-        temp_phasor = np.array([np.linalg.norm(self.tag_antenna_position(temp_coordinate, 1)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(temp_coordinate, 2)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(temp_coordinate, 3)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(temp_coordinate, 4)) * 4 * np.pi / WAVE_LENGTH])
-        temp_similarity = self.cosine_similarity(self.phasor_normalized(self.phasor_unwrapped), self.phasor_normalized(temp_phasor))
-        candidates.append(temp_phasor)
+        # if random, no need to include itself
+        # temp_coordinate = np.array((self.location_current[0], self.location_current[1], self.location_current[2]))
+        # temp_phasor = np.array([np.linalg.norm(self.tag_antenna_position(temp_coordinate, 1)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(temp_coordinate, 2)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(temp_coordinate, 3)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(temp_coordinate, 4)) * 4 * np.pi / WAVE_LENGTH])
+        # temp_similarity = self.cosine_similarity(self.phasor_normalized(self.phasor_unwrapped), self.phasor_normalized(temp_phasor))
+        # candidates_list.append(temp_phasor)
+        # result_list.append(temp_similarity)
+        
+        # print(candidates_list)
+        # print(result_list)
 
-        return candidates
-
-
-    ########################
-    # seems to be sensative along lateral (z) direction, maybe use ellipse instead?
-
-    # when updating, not appriximate directly, do synthesis
-
-    def location_update(self):
-        self.location_current = self.location_current
+        # select the best one and return
+        idx = result_list.index(max(result_list))
+        return candidates_list[idx]
 
 
-
-
-
+    
 
 
 
@@ -295,42 +332,38 @@ class RFID_Subscriber:
 
 
 ######################### testing ############################
-def only_test():
-    x = np.matrix(np.arange(4).reshape((1, 4)))
-    z = x - 1j * x
-    print(type(z))
-    # z.getH(), complex conjugate transpose of a matrix
-    print(z.getH()) 
-
-    # evaluation criteria
-    # |A * C| / |A| * |C|
-    # print(exp(1j))
+def plot_traj_from_csv():
+    x_gt_list = []
+    z_gt_list = []
+    with open('traj_gt.csv', 'r') as file1:
+        csv_reader = csv.reader(file1)
+        for row in csv_reader:
+            x_gt_list.append(float(row[0]))
+            z_gt_list.append(float(row[2]))
 
 
+    x_pd_list = []
+    z_pd_list = []
+    with open('traj_pd.csv', 'r') as file2:
+        csv_reader = csv.reader(file2)
+        for row in csv_reader:
+            x_pd_list.append(float(row[0]))
+            z_pd_list.append(float(row[2]))
 
-# def read_csv():
-#     phase1 = []
-#     count = 0
-#     # Open the CSV file
-#     with open('data.csv', 'r') as file:
-#         # Create a CSV reader object
-#         csv_reader = csv.reader(file)
 
-#         # Read the header (optional)
-#         # header = next(csv_reader)
+    # fig, axes = plt.subplots(nrows=4, ncols=1)
+    plt.figure(figsize=(12, 12))
+    plt.plot(x_gt_list, z_gt_list)
+    plt.scatter(x_gt_list, z_gt_list, c='blue', s=5)
+    plt.plot(x_pd_list, z_pd_list)
+    plt.scatter(x_pd_list, z_pd_list, c='red', s=5)
 
-#         # Process each row in the CSV file
-#         for row in csv_reader:
-#             if count < 300:
-#                 phase1.append(float(row[0]))
-#                 count = count + 1
+    # for i in range(len(x_gt_list)):
+    #     temp_x = [x_gt_list[i], x_pd_list[i]]
+    #     temp_z = [z_gt_list[i], z_pd_list[i]]
+    #     plt.plot(temp_x, temp_z)
 
-#     fig, axes = plt.subplots(nrows=4, ncols=1)
-#     axes[0].plot(phase1)
-#     axes[1].plot(data_unwrap(phase1, 1.5))
-#     axes[2].plot(data_unwrap(phase1, 1)) # best
-#     axes[3].plot(data_unwrap(phase1, 0.25))
-#     plt.show()
+    plt.show()
     # plt.savefig('data_phase1.png')
 
     # plt.xlabel('X of tf_translation (m)')
@@ -355,7 +388,6 @@ def only_test():
 
 
 def plot_bi_compare():
-
     file = open("phase_unwrap.txt", "r")
     dist = file.readlines() # class str
     phase_unwrap = []
@@ -367,10 +399,6 @@ def plot_bi_compare():
     distance = []
     for line2 in dist2:
         distance.append(float(line2))
-
-
-
-
 
     plt.plot(phase_unwrap)
     plt.plot(distance)
@@ -385,60 +413,88 @@ def plot_bi_compare():
 
 
 def plot_multi():
-    file1 = open("phase_wrap.txt", "r")
-    file2 = open("phase_unwrap.txt", "r")
-    file3 = open("dist_camera.txt", "r")
+    file1 = open("phase_unwrap_1.txt", "r")
+    file2 = open("phase_unwrap_2.txt", "r")
+    file3 = open("phase_unwrap_3.txt", "r")
+    file4 = open("phase_unwrap_4.txt", "r")
+    file5 = open("dist_camera_1.txt", "r")
+    file6 = open("dist_camera_2.txt", "r")
+    file7 = open("dist_camera_3.txt", "r")
+    file8 = open("dist_camera_4.txt", "r")
+
     data1 = file1.readlines()
     data2 = file2.readlines()
     data3 = file3.readlines()
-    d_list1 = []
-    d_list2 = []
-    d_list3 = []
-
-    phase2dist = []
-    dist2phase = []
-    modified_unwrapped_phase = []
-
-    # lmd = 0.162924707 * 2 # provided
+    data4 = file4.readlines()
+    data5 = file5.readlines()
+    data6 = file6.readlines()
+    data7 = file7.readlines()
+    data8 = file8.readlines()
     
-    # lmd = 0.162924707 # ant1
-    # lmd = 0.162924707 # ant4
-
-    # lmd = 0.202924707 # ant2
-    # lmd = 0.202924707 # ant3
-    
-    lmd = 0.232924707 # unity, 22 or 23
+    list1 = []
+    list2 = []
+    list3 = []
+    list4 = []
+    list5 = []
+    list6 = []
+    list7 = []
+    list8 = []
 
     for line1 in data1:
-        d_list1.append(float(line1))
+        list1.append(float(line1))
     for line2 in data2:
-        # phase2dist.append(-float(line2) * lmd / (4 * np.pi) + float(data3[0]) + float(data2[0]) * lmd / (4 * np.pi)) # regularize with same initial
-        d_list2.append(float(line2))
-        modified_unwrapped_phase.append(-float(line2) + float(data2[0]) + float(data3[0]) * 4 * np.pi / lmd) # 
+        list2.append(float(line2))
     for line3 in data3:
-        d_list3.append(float(line3))
-        dist2phase.append(float(line3) * 4 * np.pi / lmd) # distance should not be negative
+        list3.append(float(line3))
+    for line4 in data4:
+        list4.append(float(line4))
+    for line5 in data5:
+        list5.append(float(line5))
+    for line6 in data6:
+        list6.append(float(line6))
+    for line7 in data7:
+        list7.append(float(line7))
+    for line8 in data8:
+        list8.append(float(line8))
+
+    # for line1 in data1:
+    #     d_list1.append(float(line1))
+    # for line2 in data2:
+    #     # phase2dist.append(-float(line2) * lmd / (4 * np.pi) + float(data3[0]) + float(data2[0]) * lmd / (4 * np.pi)) # regularize with same initial
+    #     d_list2.append(float(line2))
+    #     modified_unwrapped_phase.append(-float(line2) + float(data2[0]) + float(data3[0]) * 4 * np.pi / lmd) # 
+    # for line3 in data3:
+    #     d_list3.append(float(line3))
+    #     dist2phase.append(float(line3) * 4 * np.pi / lmd) # distance should not be negative
     
     fig, axes = plt.subplots(nrows=4, ncols=1, figsize=(20, 8))
-    axes[0].plot(d_list1)
-    axes[0].plot(np.unwrap(d_list1))
-    axes[0].set_ylabel('wrapped_phase (rad)')
+    axes[0].plot(list1, label='calibrated unwarpped phase')
+    axes[0].plot(list5, label='calculated by distance')
+    axes[0].set_ylabel('ant1_uw_ph (rad)')
 
-    # print(d_list1)
-    # print(np.unwrap(d_list1))
+    axes[1].plot(list2, label='calibrated unwarpped phase')
+    axes[1].plot(list6, label='calculated by distance')
+    axes[1].set_ylabel('ant2_uw_ph (rad)')
 
-    axes[1].plot(d_list2, label='unwrapped_phase')
-    axes[1].set_ylabel('unwrapped_phase (rad)')
+    axes[2].plot(list3, label='calibrated unwarpped phase')
+    axes[2].plot(list7, label='calculated by distance')
+    axes[2].set_ylabel('ant3_uw_ph (rad)')
 
-    axes[2].plot(d_list3, label='distance from camera')
-    axes[2].plot(phase2dist, label='distance calculated by phase')
-    axes[2].set_ylabel('distance (m)')
-    
-    axes[3].plot(dist2phase, label='phase calculated by distance')
-    axes[3].plot(modified_unwrapped_phase, label='modified unwrapped_phase')
-    axes[3].set_ylabel('modified phase (rad)') # make positive/negative correlated
-    axes[3].set_xlabel('samples')
+    axes[3].plot(list4, label='calibrated unwarpped phase')
+    axes[3].plot(list8, label='calculated by distance')
+    axes[3].set_ylabel('ant4_uw_ph (rad)')
+    axes[3].set_xlabel('samples (time)')
+
+    # plt.plot(list1, label='antenna1')
+    # plt.plot(list2, label='antenna2')
+    # plt.plot(list3, label='antenna3')
+    # plt.plot(list4, label='antenna4')
+    plt.xlabel('samples (time)')
+    plt.ylabel('unwrapped phase (rad)')
+
+
     plt.legend()
+
     plt.show()
     # plt.savefig('1_0.23_wrapped.png')
 
@@ -450,33 +506,31 @@ def plot_multi():
 
 if __name__ == '__main__':
     
-    try:
-        rospy.init_node('tag_positioning', anonymous = True)
-        rate = rospy.Rate(100)
+    # try:
+    #     rospy.init_node('tag_positioning', anonymous = True)
+    #     rate = rospy.Rate(100)
 
-        # option 1
-        while not rospy.is_shutdown():
-            # rospy.Subscriber("/rfid_message", rfid_msg, lambda msg: rfid_callback(msg, phasor_unwrapped))
+    #     # option 1
+    #     while not rospy.is_shutdown():
+    #         # rospy.Subscriber("/rfid_message", rfid_msg, lambda msg: rfid_callback(msg, phasor_unwrapped))
+            
+    #         rfid_subscriber = RFID_Subscriber()
 
-            rfid_subscriber = RFID_Subscriber()
-            rate.sleep()
-            rospy.spin()
+    #         rate.sleep() #
+    #         rospy.spin() #
 
-        # option 2
-        # rfid_subscriber = RFID_Subscriber()
-        # rospy.spin()
+    #     # option 2
+    #     # rfid_subscriber = RFID_Subscriber()
+    #     # rospy.spin()
 
-        # file.close()
+    # except rospy.ROSInterruptException:
+    #     pass
 
-    except rospy.ROSInterruptException:
-        pass
-    
-    
+
 
 
     ########### only for testing ##########
-    # only_test()
-    # read_csv()
+    plot_traj_from_csv()
     # plot_bi_compare()
     # plot_multi()
 
@@ -484,3 +538,8 @@ if __name__ == '__main__':
 
 # extra work: putting the rosrun into roslaunch, and embedded the IP address
 # coding on real-time variables illustration for convenient debug
+# file type, csv more useful, txt not useful
+
+# try ellipse or hyperbolic; try spliting into lateral and horizontal direction
+# different backbone, take difference first, then based on this make estimation
+# if follow the former method, how to update correctly?
