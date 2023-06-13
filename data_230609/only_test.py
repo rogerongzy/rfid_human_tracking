@@ -30,11 +30,21 @@ def phasor_normalized(phasor):
     phasor_temp = []
     for i in range(len(phasor)):
         phasor_temp.append(exp(-1j*(phasor[i] - phasor[0])))
-    phasor_normalized = np.matrix(phasor_temp)
+    # phasor_normalized = np.matrix(phasor_temp) # matrix
+    phasor_normalized = np.array(phasor_temp) # ndarray
+
     return phasor_normalized
 
+# def cosine_similarity(complex_vec_1, complex_vec_2):
+#     num = np.linalg.norm(np.dot(complex_vec_1, complex_vec_2.getH()))
+#     den = np.linalg.norm(complex_vec_1) * np.linalg.norm(complex_vec_2)
+#     return num / den
+
+# another matching
 def cosine_similarity(complex_vec_1, complex_vec_2):
-    num = np.linalg.norm(np.dot(complex_vec_1, complex_vec_2.getH()))
+    # num = np.linalg.norm(np.dot(complex_vec_1, complex_vec_2.getH()))
+    num = np.linalg.norm(np.dot(complex_vec_1, complex_vec_2.conjugate().T)) # abs is same to norm
+    # print(np.dot(complex_vec_1, complex_vec_2.conjugate().T), np.dot(complex_vec_1.conjugate().T, complex_vec_2)) # differnet in complex part, but same in norm/abs
     den = np.linalg.norm(complex_vec_1) * np.linalg.norm(complex_vec_2)
     return num / den
 
