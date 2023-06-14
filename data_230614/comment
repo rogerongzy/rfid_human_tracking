@@ -1,0 +1,3 @@
+When fast or irregular movement, unwrap will not work perfectly. 'error'
+
+The phase variation only shows good result in vertical movement, very bad in traverse movement. 'pure_traverse'
