@@ -4,14 +4,21 @@ import numpy as np
 import matplotlib.pyplot as plt
 from cmath import exp
 
-### preset antenna coordinate, in metres ###
-ant_1 = np.array((-0.375, 0))
-ant_2 = np.array((-0.125, 0))
-ant_3 = np.array((0.125, 0))
-ant_4 = np.array((0.375, 0))
 WAVE_LENGTH = 0.232924707
-pt_1 = np.array((-0.3, 1)) # initial starting coordinate
+### preset antenna coordinate, in metres ###
+# ant_1 = np.array((-0.375, 0))
+# ant_2 = np.array((-0.125, 0))
+# ant_3 = np.array((0.125, 0))
+# ant_4 = np.array((0.375, 0))
+# pt_1 = np.array((0, 2))
+# pt_1 = np.array((-0.3, 2)) # initial starting coordinate
 
+# cross antenna set
+ant_1 = np.array((0.875, 0))
+ant_2 = np.array((1.125, 0))
+ant_3 = np.array((0, 0.875))
+ant_4 = np.array((0, 1.125))
+pt_1 = np.array((1, 1)) 
 
 
 ### figure initialization ###
@@ -21,11 +28,13 @@ colors = ['crimson', 'magenta', 'darkslateblue', 'violet', 'blue', 'steelblue', 
 
 
 def generate_random_pt(centre, radius):
-    # new_pt = np.array((centre[0] + random.uniform(-radius, radius), centre[1] + random.uniform(-radius, radius))) # square space
+    # square space
+    new_pt = np.array((centre[0] + random.uniform(-radius, radius), centre[1] + random.uniform(-radius, radius)))
 
-    random_radius = random.uniform(0, radius)
-    random_angle = random.uniform(0, 2 * np.pi)
-    new_pt = np.array((centre[0] +  random_radius * np.cos(random_angle), centre[1] + random_radius * np.sin(random_angle))) # circle space
+    # circle space
+    # random_radius = random.uniform(0, radius)
+    # random_angle = random.uniform(0, 2 * np.pi)
+    # new_pt = np.array((centre[0] +  random_radius * np.cos(random_angle), centre[1] + random_radius * np.sin(random_angle)))
 
     return new_pt
 
@@ -65,9 +74,9 @@ def candidate_generator(pt_current, pt_measured, radius, num_candidates):
     phasor_measured = get_phasor(pt_measured)
 
     for i in range(num_candidates):
-        # pt_temp = np.array((pt_current[0] + radius * np.cos(i * 2 * np.pi / num_candidates), pt_current[1] + radius * np.sin(i * 2 * np.pi / num_candidates))) # circumference
+        pt_temp = np.array((pt_current[0] + radius * np.cos(i * 2 * np.pi / num_candidates), pt_current[1] + radius * np.sin(i * 2 * np.pi / num_candidates))) # circumference
 
-        pt_temp = generate_random_pt(pt_current, radius)
+        # pt_temp = generate_random_pt(pt_current, radius)
 
         phasor_temp = get_phasor(pt_temp)
         sim_temp = cosine_similarity(phasor_normalized(phasor_measured), phasor_normalized(phasor_temp))
@@ -78,18 +87,18 @@ def candidate_generator(pt_current, pt_measured, radius, num_candidates):
     
     # add itself (circle centre) as a candidate other than the circle
     ### if randomly generate candidates, no need to add itself
-    # pt_temp = pt_current
-    # phasor_temp = get_phasor(pt_temp)
-    # sim_temp = cosine_similarity(phasor_normalized(phasor_measured), phasor_normalized(phasor_temp))
+    pt_temp = pt_current
+    phasor_temp = get_phasor(pt_temp)
+    sim_temp = cosine_similarity(phasor_normalized(phasor_measured), phasor_normalized(phasor_temp))
 
-    # candidates.append(pt_temp)
-    # result.append(sim_temp)
+    candidates.append(pt_temp)
+    result.append(sim_temp)
 
 
     # 1, only returning the candidate with the biggest similarity
     idx = result.index(max(result))
-    # plt.scatter(pt_measured[0], pt_measured[1], c=colors[idx], s=5)
-    return candidates[idx]
+    plt.scatter(pt_measured[0], pt_measured[1], c=colors[idx], s=5)
+    # return candidates[idx]
 
 
     # [not working well] 2, weighted sum of all 
@@ -147,21 +156,22 @@ def candidate_generator(pt_current, pt_measured, radius, num_candidates):
 
 def plot_hotspot():
     plt.figure(figsize=(8,8))
-    plot_candidates(pt_1, 5, 16)
+    plot_candidates(pt_1, 0.25, 16)
 
     for _ in range(5000):
-        new_pt = generate_random_pt(pt_1, 5)
+        new_pt = generate_random_pt(pt_1, 0.25)
         # print(new_pt)
-        candidate_generator(pt_1, new_pt, 5, 16)
+        candidate_generator(pt_1, new_pt, 0.25, 16)
 
-    plt.show()
-    # plt.savefig('25-80.png')
-
-
+    # plt.show()
+    plt.savefig('cross.png')
 
 
 
+
+##################################
 ###### phasor differenciate ######
+##################################
 
 def candidate_generator_df(pt_current, pt_measured, radius, num_candidates):
     candidates = []
@@ -209,8 +219,10 @@ def plot_hotspot_df():
 
 
 
-
+#################################
 ###### complete simulation ######
+#################################
+
 def func1(x):
     return x**2
 
@@ -327,11 +339,11 @@ def synthesis_scope():
 
 
 if __name__ == '__main__':
-    # plot_hotspot()
+    plot_hotspot()
 
     # plot_hotspot_df()
 
-    simulation_process()
+    # simulation_process()
 
     
 
