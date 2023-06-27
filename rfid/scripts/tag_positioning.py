@@ -1,14 +1,17 @@
 import cv2
+import sys
+import csv
+import math
 import rospy
 import random
 import apriltag
 import numpy as np
 import pyrealsense2 as rs
+import matplotlib.pyplot as plt
 from cmath import exp
 from rfid.msg import rfid_msg
-import math
-import csv
-import matplotlib.pyplot as plt
+from geometry_msgs.msg import Twist
+
 
 
 ################### modified by Rong Zhiyi ####################
@@ -45,8 +48,6 @@ traj_pd_writer = csv.writer(traj_pd_file)
 
 
 
-
-
 ###############################################################
 # considering the single antenna first
 # phase_loader consists of 4 consecutive phase (can be interrupted)
@@ -68,10 +69,16 @@ class RFID_Subscriber:
 
         ### ROS
         self.subscriber = rospy.Subscriber('/rfid_message', rfid_msg, self.callback_2) # choose callback 1 or 2
+        self.publisher = rospy.Publisher('/dynamixel_workbench/cmd_vel', Twist, queue_size=10) ##++##
         self.action_timestamp = None # used to adjust the processing period
-
+        
+        ### calibration
         self.location_current = np.array([-0.5, 0, 1]) # starting point used for manual-grid-calibration
-
+        
+        ### control ##++##
+        self.twist_msg = Twist()
+        self.twist_msg.linear.x = 0.0
+        self.twist_msg.angular.z = 0.0
 
     # def camera_init(self):
     #     self.pipeline = rs.pipeline()
@@ -257,15 +264,35 @@ class RFID_Subscriber:
                         
                         
                         ### writer for trajectory, both ground truth and predicted ###
-                        # traj_gt_writer.writerow([self.tag_camera_position[0], self.tag_camera_position[1], self.tag_camera_position[2]])
+                        # traj_gt_writer.writerow([self.tag_camera_position[0], self.tag_camera_position[1], self.tag_camera_position[2]]) # camera no more 
                         # traj_pd_writer.writerow([predicted_coordinate[0], predicted_coordinate[1], predicted_coordinate[2]])
 
                         ### writer for phase and distance ###
                         # phase_dist_writer.writerow([self.phasor_unwrapped[0], self.phasor_unwrapped[1], self.phasor_unwrapped[2], self.phasor_unwrapped[3], np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, 1)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, 2)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, 3)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, 4)) * 4 * np.pi / WAVE_LENGTH])
-                        phase_dist_writer.writerow([self.phasor_unwrapped[0], self.phasor_unwrapped[1], self.phasor_unwrapped[2], self.phasor_unwrapped[3], 0, 0, 0, 0])
+                        # phase_dist_writer.writerow([self.phasor_unwrapped[0], self.phasor_unwrapped[1], self.phasor_unwrapped[2], self.phasor_unwrapped[3], 0, 0, 0, 0])
+
+                        ### solving triangle using ant 1 and 4, in 2D version x-y plane
+                        tag_antref_position = solve_triangle(1, 4, self.phasor_unwrapped[3] * WAVE_LENGTH / (4 * np.pi), self.phasor_unwrapped[0] * WAVE_LENGTH / (4 * np.pi))
+                        # traj_pd_writer.writerow([tag_antref_position[0], tag_antref_position[1], 0])
+                        print(tag_antref_position) # record the trajectory using 2D coordinate
+
+                        r, theta = cartesian_to_polar(tag_antref_position[0], tag_antref_position[1])
+                        print(r)
+                        print(theta)
+
+                        ### update velocity and publish ##++##
+                        if r > 1: # 1
+                            self.twist_msg.linear.x = 0.02
+                            
+                        if theta - 90 > 0:
+                            self.twist_msg.angular.z = 0.1
+                        else:
+                            self.twist_msg.angular.z = -0.1
+
+                        self.publisher.publish(self.twist_msg)
                         
 
-
+                        
 
 
 
@@ -348,14 +375,74 @@ class RFID_Subscriber:
         return candidates_list[idx]
 
 
+
+
+
+def solve_triangle(ant_right, ant_left, side_left, side_right):
+    side_set = abs(ant_right - ant_left) * HALF_SIDE * 2
+
+    # Check if the triangle is valid
+    if side_set <= 0 or side_left <= 0 or side_right <= 0:
+        return "Invalid triangle: sides must be positive numbers."
+    if side_set + side_left <= side_right or side_set + side_right <= side_left or side_left + side_right <= side_set:
+        return "Invalid triangle: sum of two sides must be greater than the third side."
+
+    # Calculate angles using the law of cosines
+    # angle_top = math.acos((side_left**2 + side_right**2 - side_set**2) / (2 * side_left * side_right))
+    # angle_right = math.acos((side_set**2 + side_right**2 - side_left**2) / (2 * side_set * side_right))
+    angle_left = math.acos((side_set**2 + side_left**2 - side_right**2) / (2 * side_set * side_left))
+
+    # Calculate the area using the law of sines
+    # semiperimeter = (side_set + side_left + side_right) / 2
+    # area = math.sqrt(semiperimeter * (semiperimeter - side_set) * (semiperimeter - side_left) * (semiperimeter - side_right))
+
+    # Calculate the coordinate of the tag
+    # ant_left_coordinate = np.array([-0.25 * ant_left + 0.625, 0])
+    # ant_right_coordinate = np.array([-0.25 * ant_right + 0.625, 0])
+    tag_coordinate = np.array([-0.25 * ant_left + 0.625 + side_left * np.cos(angle_left), side_left * np.sin(angle_left)])
     
+    ### check ###
+    # print('-----------------')
+    # print(math.degrees(angle_left))
+    # print(side_left)
+
+    return tag_coordinate
+
+
+# def solve_traj(ant_1, ant_2):
+#     pt_x_list = []
+#     pt_y_list = []
+#     with open('phase_dist.csv', 'r') as file:
+#         csv_reader = csv.reader(file)
+#         for row in csv_reader:
+#             pt_temp = solve_triangle(ant_1, ant_2, float(row[ant_2 - 1]) * WAVE_LENGTH / (4 * np.pi), float(row[ant_1 - 1]) * WAVE_LENGTH / (4 * np.pi))
+#             pt_x_list.append(pt_temp[0])
+#             pt_y_list.append(pt_temp[1])
+    
+#     plt.figure(figsize=(12, 12))
+#     plt.plot(pt_x_list, pt_y_list)
+#     plt.scatter(pt_x_list, pt_y_list, c='red', s=5)
+#     plt.show()
+#     # plt.savefig('3-4.png')
 
 
 
+def cartesian_to_polar(x, y):
+    # Calculate the radius (distance from origin)
+    radius = math.sqrt(x**2 + y**2)
+
+    # Calculate the angle (in radians)
+    angle = math.atan2(y, x)
+
+    # Convert the angle from radians to degrees
+    angle_degrees = math.degrees(angle)
+
+    # Return the radius and angle in polar coordinates
+    return radius, angle_degrees
 
 
 
-######################### testing ############################
+######################### evaluation ############################
 def plot_traj_from_csv():
     x_gt_list = []
     z_gt_list = []
@@ -371,7 +458,7 @@ def plot_traj_from_csv():
         csv_reader = csv.reader(file2)
         for row in csv_reader:
             x_pd_list.append(float(row[0]))
-            z_pd_list.append(float(row[2]))
+            z_pd_list.append(float(row[1]))
 
     # fig, axes = plt.subplots(nrows=4, ncols=1)
     plt.figure(figsize=(12, 12))
@@ -387,7 +474,7 @@ def plot_traj_from_csv():
     #     plt.plot(temp_x, temp_z)
 
     plt.show()
-    # plt.savefig('data_phase1.png')
+    # plt.savefig('triangle_standard5.png')
 
 
 def plot_phase_dist_from_csv():
@@ -437,92 +524,46 @@ def plot_phase_dist_from_csv():
     plt.ylabel('unwrapped phase (rad)')
     plt.legend()
     plt.show()
-    # plt.savefig('pure_vertical_tuned.png')
+    # plt.savefig('phase.png')
 
 
 
 
 
-def solve_triangle(ant_right, ant_left, side_left, side_right):
-    side_set = abs(ant_right - ant_left) * HALF_SIDE * 2
-
-    # Check if the triangle is valid
-    if side_set <= 0 or side_left <= 0 or side_right <= 0:
-        return "Invalid triangle: sides must be positive numbers."
-    if side_set + side_left <= side_right or side_set + side_right <= side_left or side_left + side_right <= side_set:
-        return "Invalid triangle: sum of two sides must be greater than the third side."
-
-    # Calculate angles using the law of cosines
-    # angle_top = math.acos((side_left**2 + side_right**2 - side_set**2) / (2 * side_left * side_right))
-    # angle_right = math.acos((side_set**2 + side_right**2 - side_left**2) / (2 * side_set * side_right))
-    angle_left = math.acos((side_set**2 + side_left**2 - side_right**2) / (2 * side_set * side_left))
-
-    # Calculate the area using the law of sines
-    # semiperimeter = (side_set + side_left + side_right) / 2
-    # area = math.sqrt(semiperimeter * (semiperimeter - side_set) * (semiperimeter - side_left) * (semiperimeter - side_right))
-
-    # Calculate the coordinate of the tag
-    # ant_left_coordinate = np.array([-0.25 * ant_left + 0.625, 0])
-    # ant_right_coordinate = np.array([-0.25 * ant_right + 0.625, 0])
-    tag_coordinate = np.array([-0.25 * ant_left + 0.625 + side_left * np.cos(angle_left), side_left * np.sin(angle_left)])
-    
-    ### check ###
-    print('-----------------')
-    print(math.degrees(angle_left))
-    print(side_left)
-
-    return tag_coordinate
 
 
-def solve_traj(ant_1, ant_2):
-    pt_x_list = []
-    pt_y_list = []
-    with open('phase_dist.csv', 'r') as file:
-        csv_reader = csv.reader(file)
-        for row in csv_reader:
-            pt_temp = solve_triangle(ant_1, ant_2, float(row[ant_2 - 1]) * WAVE_LENGTH / (4 * np.pi), float(row[ant_1 - 1]) * WAVE_LENGTH / (4 * np.pi))
-            pt_x_list.append(pt_temp[0])
-            pt_y_list.append(pt_temp[1])
-    
-    plt.figure(figsize=(12, 12))
-    plt.plot(pt_x_list, pt_y_list)
-    plt.scatter(pt_x_list, pt_y_list, c='red', s=5)
 
+def main_run():
+    try:
+        rospy.init_node('tag_positioning', anonymous = True)
+        rate = rospy.Rate(100) # f=100, T=0.001s
 
-    # plt.show()
-    plt.savefig('3-4.png')
+        # option 1
+        while not rospy.is_shutdown():
+            # rospy.Subscriber("/rfid_message", rfid_msg, lambda msg: rfid_callback(msg, phasor_unwrapped))
+            
+            rfid_subscriber = RFID_Subscriber()
 
+            rate.sleep() #
+            rospy.spin() #
 
+        # option 2
+        # rfid_subscriber = RFID_Subscriber()
+        # rospy.spin()
+
+    except rospy.ROSInterruptException:
+        pass
 
 
 if __name__ == '__main__':
-    
-    # try:
-    #     rospy.init_node('tag_positioning', anonymous = True)
-    #     rate = rospy.Rate(100) # f=100, T=0.001s
-
-    #     # option 1
-    #     while not rospy.is_shutdown():
-    #         # rospy.Subscriber("/rfid_message", rfid_msg, lambda msg: rfid_callback(msg, phasor_unwrapped))
-            
-    #         rfid_subscriber = RFID_Subscriber()
-
-    #         rate.sleep() #
-    #         rospy.spin() #
-
-    #     # option 2
-    #     # rfid_subscriber = RFID_Subscriber()
-    #     # rospy.spin()
-
-    # except rospy.ROSInterruptException:
-    #     pass
+    if sys.argv[1] == '1':
+        main_run()
+    elif sys.argv[1] == '2':
+        plot_traj_from_csv()
+    elif sys.argv[1] == '3':
+        plot_phase_dist_from_csv()     
 
 
-
-    ########### only for testing ##########
-    # plot_traj_from_csv()
-    # plot_phase_dist_from_csv()
-    solve_traj(3, 4)
 
 
 

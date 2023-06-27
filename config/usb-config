@@ -1,0 +1,11 @@
+[from https://blog.csdn.net/m0_37827405/article/details/89287876?spm=1001.2101.3001.6650.4&utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-4-89287876-blog-117510172.235%5Ev38%5Epc_relevant_anti_t3&depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-4-89287876-blog-117510172.235%5Ev38%5Epc_relevant_anti_t3&utm_relevant_index=9]
+
+lsusb
+
+Dynamixel:
+Bus 003 Device 006: ID 0403:6014 Future Technology Devices International, Ltd FT232H Single HS USB-UART/FIFO IC
+
+Lidar:
+Bus 003 Device 012: ID 10c4:ea60 Silicon Labs CP210x UART Bridge
+
+Feetech (neck):
