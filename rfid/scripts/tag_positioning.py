@@ -23,8 +23,8 @@ PHASE_LOAD_NUM = 4
 TAG_SIZE = 0.16
 # antenna params
 NUM_ANTENNA = 4
-# WAVE_LENGTH = 0.232924707 # tuned
-WAVE_LENGTH = 0.162924707 * 2 # provided
+WAVE_LENGTH = 0.164624707 * 2 # tuned
+# WAVE_LENGTH = 0.162924707 * 2 # provided
 # camera params
 F_X, F_Y = 649.376, 649.376 # focal_length
 C_X, C_Y = 648.137, 353.517 # principal_point
@@ -33,14 +33,19 @@ X_OFFSET = 0.032
 Y_OFFSET = 0.085
 Z_OFFSET = 0.06
 HALF_SIDE = 0.125
-# candidates params
+# candidates generator params
 RADIUS = 0.05 # metre
 NUM_CANDIDATES = 100
+# starting point used for manual-grid-calibration
+location_initial = np.array([-0.5, 0, 1])
+# P controller params
+KP_linear = 0.08
+KP_angular = 0.008
 ####################### saving data ###########################
 phase_dist_file = open('phase_dist.csv', 'a+')
 phase_dist_writer = csv.writer(phase_dist_file)
-traj_gt_file = open('traj_gt.csv', 'a+')
-traj_gt_writer = csv.writer(traj_gt_file)
+# traj_gt_file = open('traj_gt.csv', 'a+')
+# traj_gt_writer = csv.writer(traj_gt_file)
 traj_pd_file = open('traj_pd.csv', 'a+')
 traj_pd_writer = csv.writer(traj_pd_file)
 
@@ -73,7 +78,7 @@ class RFID_Subscriber:
         self.action_timestamp = None # used to adjust the processing period
         
         ### calibration
-        self.location_current = np.array([-0.5, 0, 1]) # starting point used for manual-grid-calibration
+        self.location_current = location_initial
         
         ### control ##++##
         self.twist_msg = Twist()
@@ -218,31 +223,28 @@ class RFID_Subscriber:
                 # modified by real-time initial calibration
                 self.phasor_current[msg.ant - 1] = msg.phase / 180 * np.pi
 
-                if self.phasor_current[msg.ant - 1] - self.phasor_old[msg.ant - 1] > np.pi:
-                    self.phasor_unwrapped[msg.ant - 1] = self.phasor_unwrapped[msg.ant - 1] - self.phasor_current[msg.ant - 1] + self.phasor_old[msg.ant - 1] + 2 * np.pi
-                elif self.phasor_old[msg.ant - 1] - self.phasor_current[msg.ant - 1] > np.pi:
-                    self.phasor_unwrapped[msg.ant - 1] = self.phasor_unwrapped[msg.ant - 1] - self.phasor_current[msg.ant - 1] + self.phasor_old[msg.ant - 1] - 2 * np.pi
-                else:
-                    self.phasor_unwrapped[msg.ant - 1] = self.phasor_unwrapped[msg.ant - 1] - self.phasor_current[msg.ant - 1] + self.phasor_old[msg.ant - 1]
+                ## unwrapping method 1, detect variation within 2*pi
+                # if self.phasor_current[msg.ant - 1] - self.phasor_old[msg.ant - 1] > np.pi:
+                #     self.phasor_unwrapped[msg.ant - 1] = self.phasor_unwrapped[msg.ant - 1] - self.phasor_current[msg.ant - 1] + self.phasor_old[msg.ant - 1] + 2 * np.pi
+                # elif self.phasor_old[msg.ant - 1] - self.phasor_current[msg.ant - 1] > np.pi:
+                #     self.phasor_unwrapped[msg.ant - 1] = self.phasor_unwrapped[msg.ant - 1] - self.phasor_current[msg.ant - 1] + self.phasor_old[msg.ant - 1] - 2 * np.pi
+                # else:
+                #     self.phasor_unwrapped[msg.ant - 1] = self.phasor_unwrapped[msg.ant - 1] - self.phasor_current[msg.ant - 1] + self.phasor_old[msg.ant - 1]
+                #####
+
+                ## unwrapped method 2, compare difference
+                df_ph = self.phasor_current[msg.ant - 1] - self.phasor_old[msg.ant - 1]
+                df_upper = df_ph + 2 * np.pi
+                df_lower = df_ph - 2 * np.pi
+                df_list = [df_lower, df_ph, df_upper]
+                df_abs_list = [abs(df_lower), abs(df_ph), abs(df_upper)]
+                idx = df_abs_list.index(min(df_abs_list))
+                self.phasor_unwrapped[msg.ant - 1] = self.phasor_unwrapped[msg.ant - 1] - df_list[idx]
+                #####
+
             
                 self.phasor_old[msg.ant - 1] = self.phasor_current[msg.ant - 1]
 
-                ## segmentation used to record data from 4 antenna ###
-                # if msg.ant == 1:
-                #     file1.write(str(self.phasor_unwrapped[msg.ant - 1]) + "\n")
-                #     file5.write(str(np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, msg.ant)) * 4 * np.pi / WAVE_LENGTH) + "\n")
-                # elif msg.ant == 2:
-                #     file2.write(str(self.phasor_unwrapped[msg.ant - 1]) + "\n")
-                #     file6.write(str(np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, msg.ant)) * 4 * np.pi / WAVE_LENGTH) + "\n")
-                # elif msg.ant == 3:
-                #     file3.write(str(self.phasor_unwrapped[msg.ant - 1]) + "\n")
-                #     file7.write(str(np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, msg.ant)) * 4 * np.pi / WAVE_LENGTH) + "\n")
-                # elif msg.ant == 4:
-                #     file4.write(str(self.phasor_unwrapped[msg.ant - 1]) + "\n")
-                #     file8.write(str(np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, msg.ant)) * 4 * np.pi / WAVE_LENGTH) + "\n")
-                    
-                #     self.tag_detect()
-                #     traj_gt_writer.writerow([self.tag_camera_position[0], self.tag_camera_position[1], self.tag_camera_position[2]])
 
                 if msg.ant == 4:
                     # self.tag_detect() # messages for 4 antennas can be seen simultaneous, where detection only need to be done once
@@ -258,10 +260,11 @@ class RFID_Subscriber:
                         print('-------------------------------------')
                         print(msg.time)
 
+
+                        ########## lei-particle filter ##########
                         ### updating the current cordinate with the most possible candidate (complete process)
                         # predicted_coordinate = self.candidates_generator()
                         # self.location_current = predicted_coordinate
-                        
                         
                         ### writer for trajectory, both ground truth and predicted ###
                         # traj_gt_writer.writerow([self.tag_camera_position[0], self.tag_camera_position[1], self.tag_camera_position[2]]) # camera no more 
@@ -269,47 +272,29 @@ class RFID_Subscriber:
 
                         ### writer for phase and distance ###
                         # phase_dist_writer.writerow([self.phasor_unwrapped[0], self.phasor_unwrapped[1], self.phasor_unwrapped[2], self.phasor_unwrapped[3], np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, 1)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, 2)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, 3)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, 4)) * 4 * np.pi / WAVE_LENGTH])
-                        # phase_dist_writer.writerow([self.phasor_unwrapped[0], self.phasor_unwrapped[1], self.phasor_unwrapped[2], self.phasor_unwrapped[3], 0, 0, 0, 0])
+                        phase_dist_writer.writerow([self.phasor_unwrapped[0], self.phasor_unwrapped[1], self.phasor_unwrapped[2], self.phasor_unwrapped[3], 0, 0, 0, 0])
 
+                        ########## geometry triangle solving ##########
                         ### solving triangle using ant 1 and 4, in 2D version x-y plane
                         tag_antref_position = solve_triangle(1, 4, self.phasor_unwrapped[3] * WAVE_LENGTH / (4 * np.pi), self.phasor_unwrapped[0] * WAVE_LENGTH / (4 * np.pi))
-                        # traj_pd_writer.writerow([tag_antref_position[0], tag_antref_position[1], 0])
-                        print(tag_antref_position) # record the trajectory using 2D coordinate
+                        print(tag_antref_position)
+                        traj_pd_writer.writerow([tag_antref_position[0], tag_antref_position[1], 0])
+                        # print(tag_antref_position) # record the trajectory using 2D coordinate
 
-                        r, theta = cartesian_to_polar(tag_antref_position[0], tag_antref_position[1])
-                        print(r)
-                        print(theta)
+                        # r, theta = cartesian_to_polar(tag_antref_position[0], tag_antref_position[1]) # in polar coordinate
 
                         ### update velocity and publish ##++##
-                        if r > 1: # 1
-                            self.twist_msg.linear.x = 0.02
-                            
-                        if theta - 90 > 0:
-                            self.twist_msg.angular.z = 0.1
-                        else:
-                            self.twist_msg.angular.z = -0.1
+                        # if r > 1.1:
+                        #     self.twist_msg.linear.x = KP_linear * (r - 1.1) + 0.05
+                        # elif r < 0.9:
+                        #     self.twist_msg.linear.x = 0.0
 
-                        self.publisher.publish(self.twist_msg)
+                        # self.twist_msg.angular.z = KP_angular * (theta - 90) # oscillation exists
                         
-
+                        # self.publisher.publish(self.twist_msg)
                         
 
 
-
-
-                    # print('-------------------------------')
-                    # print(self.phasor_unwrapped)
-
-                    # print(self.phasor_normalized(self.phasor_unwrapped))
-                    # print(np.linalg.norm(self.phasor_normalized(self.phasor_unwrapped)))
-                    # print(self.phasor_normalized(self.phasor_unwrapped).getH())
-                    # print(np.linalg.norm(self.phasor_normalized(self.phasor_unwrapped).getH()))
-                    # print(self.cosine_similarity(self.phasor_normalized(self.phasor_unwrapped), self.phasor_normalized(self.phasor_unwrapped)))
-
-
-                    # print(self.location_current)
-                    # print(self.tag_camera_position)
-                    # print(self.tag_antenna_position(self.tag_camera_position, msg.ant))
 
                     
 
@@ -380,12 +365,17 @@ class RFID_Subscriber:
 
 def solve_triangle(ant_right, ant_left, side_left, side_right):
     side_set = abs(ant_right - ant_left) * HALF_SIDE * 2
+    
 
     # Check if the triangle is valid
     if side_set <= 0 or side_left <= 0 or side_right <= 0:
         return "Invalid triangle: sides must be positive numbers."
     if side_set + side_left <= side_right or side_set + side_right <= side_left or side_left + side_right <= side_set:
+        print(side_set)
+        print(side_left)
+        print(side_right)
         return "Invalid triangle: sum of two sides must be greater than the third side."
+
 
     # Calculate angles using the law of cosines
     # angle_top = math.acos((side_left**2 + side_right**2 - side_set**2) / (2 * side_left * side_right))
@@ -444,13 +434,13 @@ def cartesian_to_polar(x, y):
 
 ######################### evaluation ############################
 def plot_traj_from_csv():
-    x_gt_list = []
-    z_gt_list = []
-    with open('traj_gt.csv', 'r') as file1:
-        csv_reader = csv.reader(file1)
-        for row in csv_reader:
-            x_gt_list.append(float(row[0]))
-            z_gt_list.append(float(row[2]))
+    # x_gt_list = []
+    # z_gt_list = []
+    # with open('traj_gt.csv', 'r') as file1:
+    #     csv_reader = csv.reader(file1)
+    #     for row in csv_reader:
+    #         x_gt_list.append(float(row[0]))
+    #         z_gt_list.append(float(row[2]))
 
     x_pd_list = []
     z_pd_list = []
@@ -462,10 +452,12 @@ def plot_traj_from_csv():
 
     # fig, axes = plt.subplots(nrows=4, ncols=1)
     plt.figure(figsize=(12, 12))
-    plt.plot(x_gt_list, z_gt_list)
-    plt.scatter(x_gt_list, z_gt_list, c='blue', s=5)
-    plt.plot(x_pd_list, z_pd_list)
+    # plt.plot(x_gt_list, z_gt_list)
+    # plt.scatter(x_gt_list, z_gt_list, c='blue', s=5)
+    plt.plot(x_pd_list, z_pd_list, label='est_traj')
     plt.scatter(x_pd_list, z_pd_list, c='red', s=5)
+    plt.plot([-0.5, -0.5], [1, 4], c='red', label='gt_traj')
+    plt.legend()
 
     # bound relation plot
     # for i in range(len(x_gt_list)):
@@ -473,8 +465,8 @@ def plot_traj_from_csv():
     #     temp_z = [z_gt_list[i], z_pd_list[i]]
     #     plt.plot(temp_x, temp_z)
 
-    plt.show()
-    # plt.savefig('triangle_standard5.png')
+    # plt.show()
+    plt.savefig('estm_traj.png')
 
 
 def plot_phase_dist_from_csv():
@@ -482,43 +474,103 @@ def plot_phase_dist_from_csv():
     phase_2 = []
     phase_3 = []
     phase_4 = []
-    dist_1 = []
-    dist_2 = []
-    dist_3 = []
-    dist_4 = []
+    # dist_1 = []
+    # dist_2 = []
+    # dist_3 = []
+    # dist_4 = []
+    df_phase_1 = []
+    df_phase_2 = []
+    df_phase_3 = []
+    df_phase_4 = []
+    df_criteria = []
+    df_status = False
     with open('phase_dist.csv', 'r') as file:
         csv_reader = csv.reader(file)
         for row in csv_reader:
-            phase_1.append(float(row[0]) * WAVE_LENGTH / (4 * np.pi))
-            phase_2.append(float(row[1]) * WAVE_LENGTH / (4 * np.pi))
-            phase_3.append(float(row[2]) * WAVE_LENGTH / (4 * np.pi))
-            phase_4.append(float(row[3]) * WAVE_LENGTH / (4 * np.pi))
-            # phase_1.append(float(row[0]))
-            # phase_2.append(float(row[1]))
-            # phase_3.append(float(row[2]))
-            # phase_4.append(float(row[3]))
-            dist_1.append(float(row[4]))
-            dist_2.append(float(row[5]))
-            dist_3.append(float(row[6]))
-            dist_4.append(float(row[7]))
+            # phase_1.append(float(row[0]) * WAVE_LENGTH / (4 * np.pi)) # metre unit
+            # phase_2.append(float(row[1]) * WAVE_LENGTH / (4 * np.pi))
+            # phase_3.append(float(row[2]) * WAVE_LENGTH / (4 * np.pi))
+            # phase_4.append(float(row[3]) * WAVE_LENGTH / (4 * np.pi))
+            phase_1.append(float(row[0])) # rad unit
+            phase_2.append(float(row[1]))
+            phase_3.append(float(row[2]))
+            phase_4.append(float(row[3]))
+            # dist_1.append(float(row[4]))
+            # dist_2.append(float(row[5]))
+            # dist_3.append(float(row[6]))
+            # dist_4.append(float(row[7]))
+            if df_status:
+                df_phase_1.append(phase_1[-1] - phase_1[-2])
+                df_phase_2.append(phase_2[-1] - phase_2[-2])
+                df_phase_3.append(phase_3[-1] - phase_3[-2])
+                df_phase_4.append(phase_4[-1] - phase_4[-2])
+                df_criteria.append(0)
+            else:
+                df_status = True
 
-    fig, axes = plt.subplots(nrows=4, ncols=1, figsize=(20, 8))
-    axes[0].plot(phase_1, label='calibrated unwarpped phase')
-    axes[0].plot(dist_1, label='calculated by distance')
-    axes[0].set_ylabel('ant1_uw_ph (rad)')
 
-    axes[1].plot(phase_2, label='calibrated unwarpped phase')
-    axes[1].plot(dist_2, label='calculated by distance')
-    axes[1].set_ylabel('ant2_uw_ph (rad)')
+    # fig, axes = plt.subplots(nrows=4, ncols=1, figsize=(20, 8))
+    # axes[0].plot(phase_1, label='calibrated unwarpped phase')
+    # axes[0].plot(dist_1, label='calculated by distance')
+    # axes[0].set_ylabel('ant1_uw_ph (rad)')
 
-    axes[2].plot(phase_3, label='calibrated unwarpped phase')
-    axes[2].plot(dist_3, label='calculated by distance')
-    axes[2].set_ylabel('ant3_uw_ph (rad)')
+    # axes[1].plot(phase_2, label='calibrated unwarpped phase')
+    # axes[1].plot(dist_2, label='calculated by distance')
+    # axes[1].set_ylabel('ant2_uw_ph (rad)')
 
-    axes[3].plot(phase_4, label='calibrated unwarpped phase')
-    axes[3].plot(dist_4, label='calculated by distance')
-    axes[3].set_ylabel('ant4_uw_ph (rad)')
-    axes[3].set_xlabel('samples (time)')
+    # axes[2].plot(phase_3, label='calibrated unwarpped phase')
+    # axes[2].plot(dist_3, label='calculated by distance')
+    # axes[2].set_ylabel('ant3_uw_ph (rad)')
+
+    # axes[3].plot(phase_4, label='calibrated unwarpped phase')
+    # axes[3].plot(dist_4, label='calculated by distance')
+    # axes[3].set_ylabel('ant4_uw_ph (rad)')
+    # axes[3].set_xlabel('samples (time)')
+    
+    plt.figure(figsize=(12, 12))
+    plt.plot(phase_1, label='ant1')
+    plt.plot(phase_2, label='ant2')
+    plt.plot(phase_3, label='ant3')
+    plt.plot(phase_4, label='ant4')
+
+    plt.xlabel('samples (time)')
+    plt.ylabel('unwrapped phase (rad)')
+    plt.legend()
+    # plt.show()
+    plt.savefig('phase.png')
+
+    plt.figure(figsize=(20, 8))
+    plt.plot(df_phase_1, label='ant1')
+    plt.plot(df_phase_2, label='ant2')
+    plt.plot(df_phase_3, label='ant3')
+    plt.plot(df_phase_4, label='ant4')
+    plt.plot(df_criteria, label='0 criteria')
+
+    plt.xlabel('samples (time)')
+    plt.ylabel('unwrapped phase difference (rad)')
+    plt.legend()
+    # plt.show()
+    plt.savefig('df_phase.png')
+
+
+def plot_phase_singletest():
+    phase_1 = []
+    cri_start = []
+    cri_end = []
+
+
+    with open('phase_dist.csv', 'r') as file:
+        csv_reader = csv.reader(file)
+        for row in csv_reader:
+            phase_1.append(float(row[0]) * WAVE_LENGTH / (4 * np.pi)) # metre unit 
+            cri_start.append(1)
+            cri_end.append(4)
+            # phase_1.append(float(row[0])) # rad unit
+
+    plt.figure(figsize=(12, 12))
+    plt.plot(phase_1, label='ant1')
+    plt.plot(cri_start, label='1')
+    plt.plot(cri_end, label='4')
 
     plt.xlabel('samples (time)')
     plt.ylabel('unwrapped phase (rad)')
@@ -526,8 +578,15 @@ def plot_phase_dist_from_csv():
     plt.show()
     # plt.savefig('phase.png')
 
+    # plt.figure(figsize=(20, 8))
+    # plt.plot(df_phase_1, label='ant1')
 
 
+    # plt.xlabel('samples (time)')
+    # plt.ylabel('unwrapped phase difference (rad)')
+    # plt.legend()
+    # # plt.show()
+    # plt.savefig('df_phase.png')
 
 
 
@@ -560,8 +619,10 @@ if __name__ == '__main__':
         main_run()
     elif sys.argv[1] == '2':
         plot_traj_from_csv()
+    # elif sys.argv[1] == '3':
+        plot_phase_dist_from_csv()
     elif sys.argv[1] == '3':
-        plot_phase_dist_from_csv()     
+        plot_phase_singletest() 
 
 
 

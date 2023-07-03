@@ -1,0 +1,11 @@
+Traj 1: 2 tags, another is static, from (0.5,1) to (0.5,4), straight line
+
+Traj 2: 1 tag, from (0.5,4) to (0.5,1), straight line
+
+Traj 3: 1 tag, from (0.5,1) to (0.5,4), straight line
+
+Traj 4: 1 tag, from (-0.5,1) to (-0.5,4), straight line
+
+Traj 5: 1 tag, from (-0.5,4) to (-0.5,1), straight line
+
+Traj 6: 1 tag, start and end at (-0.5,1), irregular, fast moving, new unwrap
