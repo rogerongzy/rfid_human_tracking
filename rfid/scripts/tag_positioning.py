@@ -71,10 +71,10 @@ class RFID_Subscriber:
         self.phasor_unwrapped = np.array([None] * NUM_ANTENNA)
         self.phasor_old = np.array([None] * NUM_ANTENNA)
         self.phasor_current = np.array([None] * NUM_ANTENNA)
-
+        self.rssi_list = np.array([None] * NUM_ANTENNA)
         ### ROS
         self.subscriber = rospy.Subscriber('/rfid_message', rfid_msg, self.callback_2) # choose callback 1 or 2
-        self.publisher = rospy.Publisher('/dynamixel_workbench/cmd_vel', Twist, queue_size=10) ##++##
+        self.publisher = rospy.Publisher('/dynamixel_workbench/cmd_vel', Twist, queue_size=10)
         self.action_timestamp = None # used to adjust the processing period
         
         ### calibration
@@ -84,6 +84,13 @@ class RFID_Subscriber:
         self.twist_msg = Twist()
         self.twist_msg.linear.x = 0.0
         self.twist_msg.angular.z = 0.0
+
+        ### state machine ###
+        self.state_status = 0 # 0 for initial
+        # 1 for searching by rssi
+        # 2 for adjust direction by rssi
+        self.flag = True
+
 
     # def camera_init(self):
     #     self.pipeline = rs.pipeline()
@@ -187,114 +194,202 @@ class RFID_Subscriber:
 
         if msg.epc == TAG_ID:
 
-            if self.phasor_unwrapped[msg.ant - 1] == None:
-            
-                # original
-                # self.phasor_unwrapped[msg.ant - 1] = msg.phase / 180 * np.pi
-                # self.phasor_old[msg.ant - 1] = msg.phase / 180 * np.pi
+            # Go straight (or some other searching)
+            # until one of the rssi is smaller than abs(-60)
+            # adjust direction to make it point towards
+
+            if self.state_status == 0:
+                print('-----state 0-----') # planned by rssi, approximately, not accurate
+
+                self.twist_msg.linear.x = 0.04
+                self.twist_msg.angular.z = 0.0
+                self.publisher.publish(self.twist_msg)
+
+                self.rssi_list[msg.ant - 1] = msg.rssi
+
                 
-                # modified by introducing initial calibration
-                # self.phasor_unwrapped[msg.ant - 1] = np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, msg.ant)) * 4 * np.pi / WAVE_LENGTH # calibration using camera rgb stream
-                self.phasor_unwrapped[msg.ant - 1] =  np.linalg.norm(self.tag_antenna_position(self.location_current, msg.ant)) * 4 * np.pi / WAVE_LENGTH # calibration using manual grid
-
-                # self.phasor_unwrapped[msg.ant - 1] = -msg.phase / 180 * np.pi
-                self.phasor_old[msg.ant - 1] = msg.phase / 180 * np.pi
+                if (self.rssi_list[0] != None and abs(self.rssi_list[0]) < 50) or (self.rssi_list[3] != None and abs(self.rssi_list[3]) < 50):
+                    self.twist_msg.linear.x = 0.0
+                    self.twist_msg.angular.z = 0.0
+                    self.publisher.publish(self.twist_msg)
+                    self.state_status = 1
                 
-
-                # modified_unwrapped_phase.append(-float(line2) + float(data2[0]) + float(data3[0]) * 4 * np.pi / lmd)
-                # np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, msg.ant))
-
-                self.action_timestamp = msg.time
-
-            else:
-                # original
-                # self.phasor_current[msg.ant - 1] = msg.phase / 180 * np.pi
-
-                # if self.phasor_current[msg.ant - 1] - self.phasor_old[msg.ant - 1] > np.pi:
-                #     self.phasor_unwrapped[msg.ant - 1] = self.phasor_unwrapped[msg.ant - 1] + self.phasor_current[msg.ant - 1] - self.phasor_old[msg.ant - 1] - 2 * np.pi
-                # elif self.phasor_old[msg.ant - 1] - self.phasor_current[msg.ant - 1] > np.pi:
-                #     self.phasor_unwrapped[msg.ant - 1] = self.phasor_unwrapped[msg.ant - 1] + self.phasor_current[msg.ant - 1] - self.phasor_old[msg.ant - 1] + 2 * np.pi
-                # else:
-                #     self.phasor_unwrapped[msg.ant - 1] = self.phasor_unwrapped[msg.ant - 1] + self.phasor_current[msg.ant - 1] - self.phasor_old[msg.ant - 1]
-            
-                # self.phasor_old[msg.ant - 1] = self.phasor_current[msg.ant - 1]
                 
 
-                # modified by real-time initial calibration
-                self.phasor_current[msg.ant - 1] = msg.phase / 180 * np.pi
 
-                ## unwrapping method 1, detect variation within 2*pi
-                # if self.phasor_current[msg.ant - 1] - self.phasor_old[msg.ant - 1] > np.pi:
-                #     self.phasor_unwrapped[msg.ant - 1] = self.phasor_unwrapped[msg.ant - 1] - self.phasor_current[msg.ant - 1] + self.phasor_old[msg.ant - 1] + 2 * np.pi
-                # elif self.phasor_old[msg.ant - 1] - self.phasor_current[msg.ant - 1] > np.pi:
-                #     self.phasor_unwrapped[msg.ant - 1] = self.phasor_unwrapped[msg.ant - 1] - self.phasor_current[msg.ant - 1] + self.phasor_old[msg.ant - 1] - 2 * np.pi
-                # else:
-                #     self.phasor_unwrapped[msg.ant - 1] = self.phasor_unwrapped[msg.ant - 1] - self.phasor_current[msg.ant - 1] + self.phasor_old[msg.ant - 1]
-                #####
+            elif self.state_status == 1:
+                print('-----state 1-----')
 
-                ## unwrapped method 2, compare difference
-                df_ph = self.phasor_current[msg.ant - 1] - self.phasor_old[msg.ant - 1]
-                df_upper = df_ph + 2 * np.pi
-                df_lower = df_ph - 2 * np.pi
-                df_list = [df_lower, df_ph, df_upper]
-                df_abs_list = [abs(df_lower), abs(df_ph), abs(df_upper)]
-                idx = df_abs_list.index(min(df_abs_list))
-                self.phasor_unwrapped[msg.ant - 1] = self.phasor_unwrapped[msg.ant - 1] - df_list[idx]
-                #####
+                
+                self.rssi_list[msg.ant - 1] = msg.rssi
+                print(self.rssi_list)
 
-            
-                self.phasor_old[msg.ant - 1] = self.phasor_current[msg.ant - 1]
+                if self.rssi_list[0] != None and self.rssi_list[3] != None:
+                    if abs(self.rssi_list[0] - self.rssi_list[3]) < 0.5:
+                        self.twist_msg.linear.x = 0.0
+                        self.twist_msg.angular.z = 0.0
+                        self.state_status = 2
+                    elif self.rssi_list[0] < self.rssi_list[3]:
+                        self.twist_msg.angular.z = 0.1
+                        # print('turn left')
+                    elif self.rssi_list[0] > self.rssi_list[3]:
+                        self.twist_msg.angular.z = -0.1
+                        # print('turn right')
+
+                self.publisher.publish(self.twist_msg)
+
+                
+                
+            elif self.state_status == 2:
+                print('-----state 2-----')
+                # to go for a known/preset distance
+
+                if self.flag:
+                    self.begin_time = msg.time
+                    self.flag = False
+
+                self.twist_msg.linear.x = 0.02
+                self.twist_msg.angular.z = 0.0
+                self.publisher.publish(self.twist_msg)
+
+                print(msg.time)
+                print(msg.time - self.begin_time)
+                if msg.time - self.begin_time > 27 * 1000000: # 54s is preset to approach 1m
+                    self.twist_msg.linear.x = 0.0
+                    self.twist_msg.angular.z = 0.0
+                    self.publisher.publish(self.twist_msg)
+                    self.state_status = 3
 
 
-                if msg.ant == 4:
-                    # self.tag_detect() # messages for 4 antennas can be seen simultaneous, where detection only need to be done once
-                    
-                    # sampler by time, x seconds
-                    # if msg.time - self.action_timestamp > 0.2 * 1000000:
-                    #     self.action_timestamp = msg.time
-                    
-                    # no time sampling
-                    if True:
-
-                        ### process indicator ###
-                        print('-------------------------------------')
-                        print(msg.time)
 
 
-                        ########## lei-particle filter ##########
-                        ### updating the current cordinate with the most possible candidate (complete process)
-                        # predicted_coordinate = self.candidates_generator()
-                        # self.location_current = predicted_coordinate
+            elif self.state_status == 3:
+                print('-----state 3-----')
+
+
+
+
+
+
+
+
+
+            elif self.state_status == 3:
+                print('state 4')
+
+
+                if self.phasor_unwrapped[msg.ant - 1] == None:
+                
+                    # original
+                    # self.phasor_unwrapped[msg.ant - 1] = msg.phase / 180 * np.pi
+                    # self.phasor_old[msg.ant - 1] = msg.phase / 180 * np.pi
+
+                    # modified by introducing initial calibration
+                    # self.phasor_unwrapped[msg.ant - 1] = np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, msg.ant)) * 4 * np.pi / WAVE_LENGTH # calibration using camera rgb stream
+                    # self.phasor_unwrapped[msg.ant - 1] =  np.linalg.norm(self.tag_antenna_position(self.location_current, msg.ant)) * 4 * np.pi / WAVE_LENGTH # calibration using manual grid
+                    self.phasor_unwrapped[msg.ant - 1] = msg.phase / 180 * np.pi # no calibration
+
+                    self.rssi_list[msg.ant - 1] = msg.rssi
+
+                    self.phasor_old[msg.ant - 1] = msg.phase / 180 * np.pi
+
+                    self.action_timestamp = msg.time
+
+                else:
+                    # original
+                    # self.phasor_current[msg.ant - 1] = msg.phase / 180 * np.pi
+
+                    # if self.phasor_current[msg.ant - 1] - self.phasor_old[msg.ant - 1] > np.pi:
+                    #     self.phasor_unwrapped[msg.ant - 1] = self.phasor_unwrapped[msg.ant - 1] + self.phasor_current[msg.ant - 1] - self.phasor_old[msg.ant - 1] - 2 * np.pi
+                    # elif self.phasor_old[msg.ant - 1] - self.phasor_current[msg.ant - 1] > np.pi:
+                    #     self.phasor_unwrapped[msg.ant - 1] = self.phasor_unwrapped[msg.ant - 1] + self.phasor_current[msg.ant - 1] - self.phasor_old[msg.ant - 1] + 2 * np.pi
+                    # else:
+                    #     self.phasor_unwrapped[msg.ant - 1] = self.phasor_unwrapped[msg.ant - 1] + self.phasor_current[msg.ant - 1] - self.phasor_old[msg.ant - 1]
+
+                    # self.phasor_old[msg.ant - 1] = self.phasor_current[msg.ant - 1]
+
+
+                    # modified by real-time initial calibration
+                    self.phasor_current[msg.ant - 1] = msg.phase / 180 * np.pi
+
+                    ## unwrapping method 1, detect variation within 2*pi
+                    # if self.phasor_current[msg.ant - 1] - self.phasor_old[msg.ant - 1] > np.pi:
+                    #     self.phasor_unwrapped[msg.ant - 1] = self.phasor_unwrapped[msg.ant - 1] - self.phasor_current[msg.ant - 1] + self.phasor_old[msg.ant - 1] + 2 * np.pi
+                    # elif self.phasor_old[msg.ant - 1] - self.phasor_current[msg.ant - 1] > np.pi:
+                    #     self.phasor_unwrapped[msg.ant - 1] = self.phasor_unwrapped[msg.ant - 1] - self.phasor_current[msg.ant - 1] + self.phasor_old[msg.ant - 1] - 2 * np.pi
+                    # else:
+                    #     self.phasor_unwrapped[msg.ant - 1] = self.phasor_unwrapped[msg.ant - 1] - self.phasor_current[msg.ant - 1] + self.phasor_old[msg.ant - 1]
+                    #####
+
+                    ## unwrapped method 2, compare difference
+                    df_ph = self.phasor_current[msg.ant - 1] - self.phasor_old[msg.ant - 1]
+                    df_upper = df_ph + 2 * np.pi
+                    df_lower = df_ph - 2 * np.pi
+                    df_list = [df_lower, df_ph, df_upper]
+                    df_abs_list = [abs(df_lower), abs(df_ph), abs(df_upper)]
+                    idx = df_abs_list.index(min(df_abs_list))
+                    self.phasor_unwrapped[msg.ant - 1] = self.phasor_unwrapped[msg.ant - 1] - df_list[idx]
+                    #####
+
+                    self.rssi_list[msg.ant - 1] = msg.rssi
+                    self.phasor_old[msg.ant - 1] = self.phasor_current[msg.ant - 1] # original place
+
+
+
+
+
+
+
+                    if msg.ant == 4:
+                        # self.tag_detect() # messages for 4 antennas can be seen simultaneous, where detection only need to be done once
+
+                        # sampler by time, x seconds
+                        # if msg.time - self.action_timestamp > 0.2 * 1000000:
+                        #     self.action_timestamp = msg.time
+
+                        # no time sampling
+                        if True:
+
+                            ### process indicator ###
+                            print('-------------------------------------')
+                            print(msg.time)
+
+                            print(self.rssi_list)
+
+
+                            ########## lei-particle filter ##########
+                            ### updating the current cordinate with the most possible candidate (complete process)
+                            # predicted_coordinate = self.candidates_generator()
+                            # self.location_current = predicted_coordinate
+
+                            ### writer for trajectory, both ground truth and predicted ###
+                            # traj_gt_writer.writerow([self.tag_camera_position[0], self.tag_camera_position[1], self.tag_camera_position[2]]) # camera no more 
+                            # traj_pd_writer.writerow([predicted_coordinate[0], predicted_coordinate[1], predicted_coordinate[2]])
+
+                            ### writer for phase and distance ###
+                            # phase_dist_writer.writerow([self.phasor_unwrapped[0], self.phasor_unwrapped[1], self.phasor_unwrapped[2], self.phasor_unwrapped[3], np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, 1)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, 2)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, 3)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, 4)) * 4 * np.pi / WAVE_LENGTH])
+                            phase_dist_writer.writerow([self.phasor_unwrapped[0], self.phasor_unwrapped[1], self.phasor_unwrapped[2], self.phasor_unwrapped[3], 0, 0, 0, 0])
+
+
+                            ########## geometry triangle solving ##########
+                            ### solving triangle using ant 1 and 4, in 2D version x-y plane
+                            # tag_antref_position = solve_triangle(1, 4, self.phasor_unwrapped[3] * WAVE_LENGTH / (4 * np.pi), self.phasor_unwrapped[0] * WAVE_LENGTH / (4 * np.pi))
+                            # print(tag_antref_position)
+                            # traj_pd_writer.writerow([tag_antref_position[0], tag_antref_position[1], 0])
+                            # print(tag_antref_position) # record the trajectory using 2D coordinate
+
+                            # r, theta = cartesian_to_polar(tag_antref_position[0], tag_antref_position[1]) # in polar coordinate
+
+                            ### update velocity and publish ##++##
+                            # if r > 1.1:
+                            #     self.twist_msg.linear.x = KP_linear * (r - 1.1) + 0.05
+                            # elif r < 0.9:
+                            #     self.twist_msg.linear.x = 0.0
+
+                            # self.twist_msg.angular.z = KP_angular * (theta - 90) # oscillation exists
+
+                            # self.publisher.publish(self.twist_msg)
                         
-                        ### writer for trajectory, both ground truth and predicted ###
-                        # traj_gt_writer.writerow([self.tag_camera_position[0], self.tag_camera_position[1], self.tag_camera_position[2]]) # camera no more 
-                        # traj_pd_writer.writerow([predicted_coordinate[0], predicted_coordinate[1], predicted_coordinate[2]])
-
-                        ### writer for phase and distance ###
-                        # phase_dist_writer.writerow([self.phasor_unwrapped[0], self.phasor_unwrapped[1], self.phasor_unwrapped[2], self.phasor_unwrapped[3], np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, 1)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, 2)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, 3)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, 4)) * 4 * np.pi / WAVE_LENGTH])
-                        phase_dist_writer.writerow([self.phasor_unwrapped[0], self.phasor_unwrapped[1], self.phasor_unwrapped[2], self.phasor_unwrapped[3], 0, 0, 0, 0])
-
-                        ########## geometry triangle solving ##########
-                        ### solving triangle using ant 1 and 4, in 2D version x-y plane
-                        tag_antref_position = solve_triangle(1, 4, self.phasor_unwrapped[3] * WAVE_LENGTH / (4 * np.pi), self.phasor_unwrapped[0] * WAVE_LENGTH / (4 * np.pi))
-                        print(tag_antref_position)
-                        traj_pd_writer.writerow([tag_antref_position[0], tag_antref_position[1], 0])
-                        # print(tag_antref_position) # record the trajectory using 2D coordinate
-
-                        # r, theta = cartesian_to_polar(tag_antref_position[0], tag_antref_position[1]) # in polar coordinate
-
-                        ### update velocity and publish ##++##
-                        # if r > 1.1:
-                        #     self.twist_msg.linear.x = KP_linear * (r - 1.1) + 0.05
-                        # elif r < 0.9:
-                        #     self.twist_msg.linear.x = 0.0
-
-                        # self.twist_msg.angular.z = KP_angular * (theta - 90) # oscillation exists
-                        
-                        # self.publisher.publish(self.twist_msg)
-                        
-
-
 
                     
 
