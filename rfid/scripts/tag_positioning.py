@@ -23,8 +23,8 @@ PHASE_LOAD_NUM = 4
 TAG_SIZE = 0.16
 # antenna params
 NUM_ANTENNA = 4
-WAVE_LENGTH = 0.164624707 * 2 # tuned
-# WAVE_LENGTH = 0.162924707 * 2 # provided
+# WAVE_LENGTH = 0.164624707 * 2 # tuned
+WAVE_LENGTH = 0.162924707 * 2 # provided
 # camera params
 F_X, F_Y = 649.376, 649.376 # focal_length
 C_X, C_Y = 648.137, 353.517 # principal_point
@@ -37,7 +37,7 @@ HALF_SIDE = 0.125
 RADIUS = 0.05 # metre
 NUM_CANDIDATES = 100
 # starting point used for manual-grid-calibration
-location_initial = np.array([-0.5, 0, 1])
+# location_initial = np.array([-0.5, 0, 1])
 # P controller params
 KP_linear = 0.08
 KP_angular = 0.008
@@ -59,7 +59,7 @@ traj_pd_writer = csv.writer(traj_pd_file)
 
 class RFID_Subscriber:
     def __init__(self):
-        ### camera
+        ### camera ###
         # self.camera_init()
 
         ### callback_1, multi-aperture version
@@ -72,24 +72,28 @@ class RFID_Subscriber:
         self.phasor_old = np.array([None] * NUM_ANTENNA)
         self.phasor_current = np.array([None] * NUM_ANTENNA)
         self.rssi_list = np.array([None] * NUM_ANTENNA)
-        ### ROS
+        
+        ### ROS ###
         self.subscriber = rospy.Subscriber('/rfid_message', rfid_msg, self.callback_2) # choose callback 1 or 2
         self.publisher = rospy.Publisher('/dynamixel_workbench/cmd_vel', Twist, queue_size=10)
         self.action_timestamp = None # used to adjust the processing period
         
-        ### calibration
-        self.location_current = location_initial
+        ### calibration ###
+        # self.location_current = location_initial
         
-        ### control ##++##
+        ### control ###
         self.twist_msg = Twist()
         self.twist_msg.linear.x = 0.0
         self.twist_msg.angular.z = 0.0
 
         ### state machine ###
         self.state_status = 0 # 0 for initial
-        # 1 for searching by rssi
-        # 2 for adjust direction by rssi
+
+        # used for trajectory localization
         self.flag = True
+        self.begin_time = None
+        self.begin_phasor = np.array([None] * NUM_ANTENNA)
+
 
 
     # def camera_init(self):
@@ -199,15 +203,16 @@ class RFID_Subscriber:
             # adjust direction to make it point towards
 
             if self.state_status == 0:
-                print('-----state 0-----') # planned by rssi, approximately, not accurate
+                print('-----state 0-----') # go straight for large enough rssi
 
                 self.twist_msg.linear.x = 0.04
                 self.twist_msg.angular.z = 0.0
-                self.publisher.publish(self.twist_msg)
+                
+                if msg.ant == 4:
+                    self.publisher.publish(self.twist_msg)
 
                 self.rssi_list[msg.ant - 1] = msg.rssi
 
-                
                 if (self.rssi_list[0] != None and abs(self.rssi_list[0]) < 50) or (self.rssi_list[3] != None and abs(self.rssi_list[3]) < 50):
                     self.twist_msg.linear.x = 0.0
                     self.twist_msg.angular.z = 0.0
@@ -215,12 +220,9 @@ class RFID_Subscriber:
                     self.state_status = 1
                 
                 
-
-
             elif self.state_status == 1:
-                print('-----state 1-----')
+                print('-----state 1-----') # turn until rssi from ant1 and ant4 is approximate
 
-                
                 self.rssi_list[msg.ant - 1] = msg.rssi
                 print(self.rssi_list)
 
@@ -235,48 +237,82 @@ class RFID_Subscriber:
                     elif self.rssi_list[0] > self.rssi_list[3]:
                         self.twist_msg.angular.z = -0.1
                         # print('turn right')
-
-                self.publisher.publish(self.twist_msg)
+                
+                if msg.ant == 4:
+                    self.publisher.publish(self.twist_msg)
 
                 
                 
             elif self.state_status == 2:
-                print('-----state 2-----')
-                # to go for a known/preset distance
-
+                print('-----state 2-----') # to go for a known/preset distance
+                
                 if self.flag:
                     self.begin_time = msg.time
                     self.flag = False
 
-                self.twist_msg.linear.x = 0.02
-                self.twist_msg.angular.z = 0.0
-                self.publisher.publish(self.twist_msg)
+                # phase unwrap
+                if self.phasor_unwrapped[msg.ant - 1] == None:
+                    self.begin_phasor[msg.ant - 1] = msg.phase / 180 * np.pi ## used to record the very initial phase
+                    self.phasor_unwrapped[msg.ant - 1] = msg.phase / 180 * np.pi # no calibration
+                    self.phasor_old[msg.ant - 1] = msg.phase / 180 * np.pi
+                    self.action_timestamp = msg.time
+                else:                   
+                    self.phasor_current[msg.ant - 1] = msg.phase / 180 * np.pi
+                    df_ph = self.phasor_current[msg.ant - 1] - self.phasor_old[msg.ant - 1]
+                    df_upper = df_ph + 2 * np.pi
+                    df_lower = df_ph - 2 * np.pi
+                    df_list = [df_lower, df_ph, df_upper]
+                    df_abs_list = [abs(df_lower), abs(df_ph), abs(df_upper)]
+                    idx = df_abs_list.index(min(df_abs_list))
+                    self.phasor_unwrapped[msg.ant - 1] = self.phasor_unwrapped[msg.ant - 1] - df_list[idx]
+                    self.phasor_old[msg.ant - 1] = self.phasor_current[msg.ant - 1]
 
-                print(msg.time)
-                print(msg.time - self.begin_time)
-                if msg.time - self.begin_time > 27 * 1000000: # 54s is preset to approach 1m
+
+                self.twist_msg.linear.x = 0.06 # 0.02 for 27s
+                self.twist_msg.angular.z = 0.0
+                if msg.ant == 4:
+                    self.publisher.publish(self.twist_msg)
+
+                # print(msg.time)
+                # print(msg.time - self.begin_time)
+                if msg.time - self.begin_time > 17.8 * 1000000: # 54s is preset to approach 1m, 27 for 0.5m, 8.9 & 0.06 for 0.5m
                     self.twist_msg.linear.x = 0.0
                     self.twist_msg.angular.z = 0.0
                     self.publisher.publish(self.twist_msg)
                     self.state_status = 3
 
+                    # solve the hyperbolas intersaction
+                    var_ph_ant1 = (self.begin_phasor[0] - self.phasor_unwrapped[0]) * WAVE_LENGTH / (4 * np.pi) # in meters
+                    var_ph_ant4 = (self.begin_phasor[3] - self.phasor_unwrapped[3]) * WAVE_LENGTH / (4 * np.pi)
+                    dist = 1 # the preset moving-forward distance
+
+                    # iterator from -0.375 to 0.375, step = 0.001
+                    x = -0.376
+                    val_result = []
+                    for _ in range(751):
+                        x += 0.001
+                        val1 = ((x-0.375)**2) * ((var_ph_ant1/2)**2) / (((dist/2)**2) - ((var_ph_ant1/2)**2)) + ((var_ph_ant1/2)**2)
+                        val4 = ((x+0.375)**2) * ((var_ph_ant4/2)**2) / (((dist/2)**2) - ((var_ph_ant4/2)**2)) + ((var_ph_ant4/2)**2)
+                        val_temp = abs(val1 - val4)
+                        val_result.append(val_temp)
+                    
+                    idx_solution = val_result.index(min(val_result))
+                    x_solution = -0.376 + idx_solution * 0.001
+                    y_solution = np.sqrt(((x_solution-0.375)**2) * ((var_ph_ant1/2)**2) / (((dist/2)**2) - ((var_ph_ant1/2)**2)) + ((var_ph_ant1/2)**2)) - (dist/2)
+
+                    print('ant1: ', var_ph_ant1)
+                    print('ant4: ', var_ph_ant4)
+                    print('idx: ', idx_solution)
+                    print('x: ', x_solution)
+                    print('y: ', y_solution)
+
+                    self.location_current = np.array([x_solution, 0, y_solution])
+                    self.phasor_unwrapped = np.array([None] * NUM_ANTENNA) # renew the data for following calibration
 
 
 
             elif self.state_status == 3:
-                print('-----state 3-----')
-
-
-
-
-
-
-
-
-
-            elif self.state_status == 3:
-                print('state 4')
-
+                print('state 3')
 
                 if self.phasor_unwrapped[msg.ant - 1] == None:
                 
@@ -286,10 +322,8 @@ class RFID_Subscriber:
 
                     # modified by introducing initial calibration
                     # self.phasor_unwrapped[msg.ant - 1] = np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, msg.ant)) * 4 * np.pi / WAVE_LENGTH # calibration using camera rgb stream
-                    # self.phasor_unwrapped[msg.ant - 1] =  np.linalg.norm(self.tag_antenna_position(self.location_current, msg.ant)) * 4 * np.pi / WAVE_LENGTH # calibration using manual grid
-                    self.phasor_unwrapped[msg.ant - 1] = msg.phase / 180 * np.pi # no calibration
-
-                    self.rssi_list[msg.ant - 1] = msg.rssi
+                    self.phasor_unwrapped[msg.ant - 1] =  np.linalg.norm(self.tag_antenna_position(self.location_current, msg.ant)) * 4 * np.pi / WAVE_LENGTH # calibration using manual grid
+                    # self.phasor_unwrapped[msg.ant - 1] = msg.phase / 180 * np.pi # no calibration
 
                     self.phasor_old[msg.ant - 1] = msg.phase / 180 * np.pi
 
@@ -331,13 +365,7 @@ class RFID_Subscriber:
                     self.phasor_unwrapped[msg.ant - 1] = self.phasor_unwrapped[msg.ant - 1] - df_list[idx]
                     #####
 
-                    self.rssi_list[msg.ant - 1] = msg.rssi
                     self.phasor_old[msg.ant - 1] = self.phasor_current[msg.ant - 1] # original place
-
-
-
-
-
 
 
                     if msg.ant == 4:
@@ -354,7 +382,6 @@ class RFID_Subscriber:
                             print('-------------------------------------')
                             print(msg.time)
 
-                            print(self.rssi_list)
 
 
                             ########## lei-particle filter ##########
@@ -368,27 +395,27 @@ class RFID_Subscriber:
 
                             ### writer for phase and distance ###
                             # phase_dist_writer.writerow([self.phasor_unwrapped[0], self.phasor_unwrapped[1], self.phasor_unwrapped[2], self.phasor_unwrapped[3], np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, 1)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, 2)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, 3)) * 4 * np.pi / WAVE_LENGTH, np.linalg.norm(self.tag_antenna_position(self.tag_camera_position, 4)) * 4 * np.pi / WAVE_LENGTH])
-                            phase_dist_writer.writerow([self.phasor_unwrapped[0], self.phasor_unwrapped[1], self.phasor_unwrapped[2], self.phasor_unwrapped[3], 0, 0, 0, 0])
+                            # phase_dist_writer.writerow([self.phasor_unwrapped[0], self.phasor_unwrapped[1], self.phasor_unwrapped[2], self.phasor_unwrapped[3], 0, 0, 0, 0])
+
 
 
                             ########## geometry triangle solving ##########
                             ### solving triangle using ant 1 and 4, in 2D version x-y plane
-                            # tag_antref_position = solve_triangle(1, 4, self.phasor_unwrapped[3] * WAVE_LENGTH / (4 * np.pi), self.phasor_unwrapped[0] * WAVE_LENGTH / (4 * np.pi))
-                            # print(tag_antref_position)
+                            tag_antref_position = solve_triangle(1, 4, self.phasor_unwrapped[3] * WAVE_LENGTH / (4 * np.pi), self.phasor_unwrapped[0] * WAVE_LENGTH / (4 * np.pi))
+                            # print(tag_antref_position) # record the trajectory using 2D coordinate, only used in static robot
                             # traj_pd_writer.writerow([tag_antref_position[0], tag_antref_position[1], 0])
-                            # print(tag_antref_position) # record the trajectory using 2D coordinate
 
-                            # r, theta = cartesian_to_polar(tag_antref_position[0], tag_antref_position[1]) # in polar coordinate
+                            r, theta = cartesian_to_polar(tag_antref_position[0], tag_antref_position[1]) # in polar coordinate
 
                             ### update velocity and publish ##++##
-                            # if r > 1.1:
-                            #     self.twist_msg.linear.x = KP_linear * (r - 1.1) + 0.05
-                            # elif r < 0.9:
-                            #     self.twist_msg.linear.x = 0.0
+                            if r > 1.1:
+                                self.twist_msg.linear.x = KP_linear * (r - 1.1) + 0.05
+                            elif r < 0.9:
+                                self.twist_msg.linear.x = 0.0
 
-                            # self.twist_msg.angular.z = KP_angular * (theta - 90) # oscillation exists
+                            self.twist_msg.angular.z = KP_angular * (theta - 90) # oscillation exists
 
-                            # self.publisher.publish(self.twist_msg)
+                            self.publisher.publish(self.twist_msg)
                         
 
                     
