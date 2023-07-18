@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 dist_odom = 1 # = 2 * c, in meters
 
-pt_tag = np.array([-0.25, 2])
+pt_tag = np.array([-0.15, 1])
 
 
 pt_ant4 = np.array([-0.375, 0])
@@ -37,14 +37,12 @@ print('delta_ant1: ', delta_r_ant1)
 print('delta_ant4: ', delta_r_ant4)
 # print('df_delta: ', delta_r_ant1 - delta_r_ant4)
 
-
-
-
+# x = [] # ##++##
 
 # Calculate y values for the upper branch of the hyperbola
 # x to (x + 0.375), left move; x to (x - 0.375), right move
-# y_ant4 = np.sqrt((((x - pt_ant4[0])**2) * (b_ant4**2)) / (a_ant4**2) + b_ant4**2) - c_ant4
-# y_ant1 = np.sqrt((((x - pt_ant1[0])**2) * (b_ant1**2)) / (a_ant1**2) + b_ant1**2) - c_ant1
+y_ant4 = np.sqrt((((x - pt_ant4[0])**2) * (b_ant4**2)) / (a_ant4**2) + b_ant4**2) - c_ant4
+y_ant1 = np.sqrt((((x - pt_ant1[0])**2) * (b_ant1**2)) / (a_ant1**2) + b_ant1**2) - c_ant1
 # y_0 = np.array([0] * len(x))
 
 # Calculate y values for the lower branch of the hyperbola (do not need in case)
@@ -66,27 +64,29 @@ print(x_solution)
 print(y_solution)
 
 
-# # Plot the hyperbola
-# plt.plot(x, y_ant4, label='Upper Branch ant4')
-# plt.plot(x, y_ant1, label='Upper Branch ant1')
+
+
+# Plot the hyperbola
+plt.plot(x, y_ant4, label='Upper Branch ant4')
+plt.plot(x, y_ant1, label='Upper Branch ant1')
 # plt.plot(x, y_0, label='Upper Branch ant1')
-# # plt.plot(x, y_lower, label='Lower Branch')
+# plt.plot(x, y_lower, label='Lower Branch')
 
-# # assist line for Asymptote
-# # plt.plot([-10, 10], [-5, 5], c='red') # [-10, -5] to [10, 5], slope=0.5=b/a
-# # plt.plot([10, -10], [-5, 5], c='red') # [10, -5] to [-10, 5]
+# assist line for Asymptote
+# plt.plot([-10, 10], [-5, 5], c='red') # [-10, -5] to [10, 5], slope=0.5=b/a
+# plt.plot([10, -10], [-5, 5], c='red') # [10, -5] to [-10, 5]
 
-# # Set labels and title
-# plt.xlabel('x')
-# plt.ylabel('y')
-# # plt.title('Hyperbola')
+# Set labels and title
+plt.xlabel('x')
+plt.ylabel('y')
+# plt.title('Hyperbola')
 
-# # Set aspect ratio to 'equal' to avoid distortion
-# # plt.gca().set_aspect('equal', adjustable='box')
+# Set aspect ratio to 'equal' to avoid distortion
+# plt.gca().set_aspect('equal', adjustable='box')
 
-# # Add legend
-# plt.legend()
+# Add legend
+plt.legend()
 
-# # Show the plot
-# # plt.show()
-# # plt.savefig('test.png')
+# Show the plot
+plt.show()
+# plt.savefig('test.png')
